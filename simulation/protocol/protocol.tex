@@ -1,0 +1,255 @@
+\documentclass[letterpaper, 9pt]{article}
+%\usepackage[nomarkers]{endfloat} %%%%%%%%%
+\usepackage{calc}
+\usepackage{color}
+\usepackage{amsmath,amsthm,amssymb}
+\usepackage{graphicx}
+\usepackage{float}
+% Create new "listing" float
+\newfloat{listing}{tbhp}{lst}%[section]
+\floatname{listing}{Listing}
+\newcommand{\listoflistings}{\listof{listing}{List of Listings}}
+\floatstyle{plaintop}
+\restylefloat{listing}
+ 
+%\usepackage{natbib}
+%\usepackage{multind}
+\usepackage{booktabs}
+\usepackage{enumerate}
+% \usepackage{uarial}
+% \renewcommand{\familydefault}{\sfdefault}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% to change %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% \usepackage{lineno}
+%% \linenumber
+\renewcommand{\baselinestretch}{1}  %% 2
+
+\usepackage{color,xcolor}
+\definecolor{link}{HTML}{004C80}
+
+\usepackage[labelfont=bf]{caption}
+\usepackage[english]{babel}
+\usepackage[pdftex,plainpages=false,pdfpagelabels,pagebackref=true,colorlinks=true, citecolor=link,linkcolor=link]{hyperref}
+\hypersetup{colorlinks,urlcolor=link}
+\usepackage{array, lipsum}
+
+% \usepackage{datetime}
+\usepackage[margin=2cm,textwidth=19cm]{geometry}
+\usepackage{float}
+
+
+
+\newcommand{\eg}{{e.\,g.\,}}
+\newcommand{\ie}{{i.\,e.\,}}
+\newcommand{\pkg}[1]{\textit{#1}}
+
+
+\newcommand{\N}{\mathcal{N}}
+
+\setlength\parindent{0pt}
+
+\newcommand{\todo}[1]{\textcolor{red}{#1}}
+
+\makeatletter
+\DeclareRobustCommand*\textsubscript[1]{%
+  \@textsubscript{\selectfont#1}}
+\def\@textsubscript#1{%
+  {\m@th\ensuremath{_{\mbox{\fontsize\sf@size\z@#1}}}}}
+\makeatother
+
+
+
+
+
+
+\begin{document}
+\begin{center}
+  {\noindent \LARGE \bf Simulation protocol:\\[2mm]
+    Comparison of confidence intervals summarizing the\\[2mm]
+    uncertainty of the combined estimate of a meta-analysis
+  }\\
+\bigskip
+{\noindent \Large Florian Gerber, Leonhard Held, Lisa Hofer, Philip Heesen
+}\end{center}
+\bigskip
+\vspace*{.5cm}
+
+
+For the present protocol is inspired by \cite{burt:etal:06} and \cite{morr:etal:19}.
+
+
+The simulation is implemented in \texttt{simulate\_all.R}.
+
+
+\tableofcontents
+
+\newpage 
+
+\section{Aims and objectives}\label{ref:aims}
+Comparison of confidence intervals summarizing the uncertainty of the combined estimate of a meta-analysis.
+
+\begin{enumerate}
+\item Considered methods are
+\begin{enumerate}
+\item DerSimonian and Laird (DL) \cite{ders:lair:86}
+\item Hartung Knapp Sidik Jonkman (HK) \cite{IntHoutIoannidis}
+\item Harmonic mean analysis with alternative {\texttt none} \cite{Held2020b}
+\item Harmonic mean analysis with alternative {\texttt two.sided} \cite{Held2020b}
+\item Harmonic mean analysis with alternative {\texttt none}, additive variance adjustment with $\hat I^2$. An extension of the idea in \cite{Held2020b}. 
+\item Harmonic mean analysis with alternative {\texttt none}, multiplicative variance adjustment \cite{mawd:etal:17}.
+  An extension of the idea in \cite{Held2020b}. 
+\item Henmi and Copas (HC) \cite{henm:copa:10}.
+\end{enumerate}
+\item We assess the CIs using the following criteria
+  \begin{enumerate}
+  \item CI coverage of combined effect, \ie, the proportion of intervals containing the true effect
+  \item CI coverage of study effects, \ie, the proportion of intervals containing the true study specific effect
+  \item CI width 
+  \item CI score \cite{Gnei:Raft:07}
+  \item number of CIs (only for Harmonic mean method with alternative {\texttt none}).
+  \end{enumerate}
+\end{enumerate}
+
+
+
+
+
+
+\section{Simulation procedures}
+
+
+\subsection{Allowance for failures}
+We expect no failures, \ie, for all simulated datasets all type of CI methods should lead to a valid CI and all valid CIs should lead to valid CI criteria.
+If a failure occurs, we stop the simulation and investigate the reason for the failure. 
+
+
+
+
+\subsection{Software to perform simulations}
+The simulation study is performed using the statistical software R \cite{R}.
+We save the output of \texttt{sessionInfo()} giving information on the used version of R, packages, and platform with the simulation results.
+
+
+
+\subsection{Random number generator}
+We use the package 'doRNG' with its default random number generator to ensure that random numbers generated inside parallel for loops are independent and reproducible.
+
+
+\section{Scenarios to be investigated} \label{sec:scenario}
+The $360$ simulated scenarios consist of all combinations of the following parameters:
+\begin{itemize}
+\item Higgin's $I^2$ heterogeneity measure $\in \{0, 0.3, 0.6, 0.9\}$.
+\item Number of studies summarized by the meta-analysis $k \in \{2, 3, 5, 10, 20\}$.
+\item Publication bias is  $\in \{\text{'none'}, \text{'moderate'}, \text{strong'}\}$ following the terminology of \cite{henm:copa:10}.
+  The average study effect also influences the publication bias, and we set it to $\theta = 0.2$ to obtain a similar scenario as used in \cite{henm:copa:10}.
+\item The distribution to draw the true study values $\delta_i$ is either 'Gaussian' or 't'. The latter leads to more 'outliers'.
+\item Increase the number of patients for 0, 1, or 2 studies by a factor 10. 
+\end{itemize}
+Sample size of the individual studies (number of patients per study) is fixed to $n = 50$. Note that \cite{IntHoutIoannidis} use a similar setup.
+
+
+\subsection{Simulation of the data}
+For each scenario in Section~\ref{sec:scenario} we
+\begin{enumerate}
+\item simulate $10000$ meta-analysis datasets
+\item compute the CI's listed in Section~\ref{ref:aims} for each meta-analysis
+\item summarize the performance of the CI's by the criteria listed in Section~\ref{ref:aims}
+\end{enumerate}
+
+
+For the \textbf{Gaussian model without publication bias}, the simulation of one meta-analysis dataset is performed as follows:
+\begin{enumerate}
+\item Compute the within-study variance $\epsilon^2 = \frac{2}{n}$.
+\item Compute the between-study variance $\tau^2 = \epsilon^2 \frac{I^2}{1-I^2}$. 
+\item For a trial $i$ of the meta-analysis with $k$ trials, $i = 1, \dots, k$:
+  \begin{enumerate}
+  \item Simulate the true effect size using the Gaussian model: $\delta_i \sim \N(\theta, \tau^2)$ or using a students-t distribution such that the samples have mean $\theta$ and variance $\tau^2$.
+  \item Simulate the effect estimates of each trial $y_i \sim \N(\delta_i, \frac{2}{n})$.
+  \item $\text{se}_i \sim \sqrt{\frac{\chi^2(2n-2)}{(n-1)n}}$ are the standard errors of trial outcomes
+  \end{enumerate}
+\end{enumerate}
+
+\paragraph{Note: Student's t instead of Gaussian}\mbox{}\\
+To generate more 'outlier' studies, we use the Student's~t instead of the Gaussian distribution to simulate the true study effects~$\delta_i$. 
+We use the Student's~t with 4 degrees of freedom and choose the other parameter such that the variance of the samples is~$\tau^2$. 
+
+
+\paragraph{Note: Publication bias}\mbox{}\\
+To simulate studies under \textbf{publication bias}, we follow the suggestion of \cite{henm:copa:10} and accept each simulated study with probability
+$$\exp(-4\, \Phi(-\theta_i / \text{se}_i)^\gamma ),$$
+where $\gamma = 3$ and $\gamma = 1.5$ correspond to \emph{moderate} and \emph{strong} publication bias, respectively.
+This is, accepted studies are kept and for a rejected study we replace $\theta_i$ and $\text{se}_i$ by newly simulated values, which are then again accepted with the given probability above.
+This procedure is repeated until the required number of studies is simulated. 
+
+The mean study effect $\theta$ and the sample size $n$ have an influence on the acceptance probability.
+To obtain a similar scenario as in \cite{henm:copa:10} we set
+$$ \theta / \sqrt{2/n}  \overset{!}{=} 1 \Rightarrow \theta = \sqrt{2/n}$$
+This is, for $n=50$ we use $\theta = 0.2$. See the R function \texttt{simREbias()}.
+
+
+\paragraph{Note: Unbalanced sample sizes}\mbox{}\\
+To study the effect of unbalanced sample sizes we consider the following setup:
+\begin{enumerate}
+\item Increase the sample size of \textbf{one} of the $k$ by a factor 10. 
+\item Increase the sample size of \textbf{two} of the $k$ by a factor 10. 
+\end{enumerate}
+A possible publication bias is only applied to the small studies.
+See the argument \texttt{large} of \texttt{simREbias()}.
+
+
+
+\section{Statistical methods to be evaluated} \label{sec:method}
+\begin{enumerate}
+\item DerSimonian and Laird (DL) \cite{ders:lair:86}
+\item Hartung Knapp Sidik Jonkman (HK) \cite{IntHoutIoannidis}
+\item Harmonic mean analysis with alternative {\texttt none} \cite{Held2020b}
+\item Harmonic mean analysis with alternative {\texttt two.sided} \cite{Held2020b}
+\item Harmonic mean analysis with alternative {\texttt none}, additive variance adjustment with $\hat I^2$. An extension of the idea in \cite{Held2020b}. 
+\item Harmonic mean analysis with alternative {\texttt none}, multiplicative variance adjustment \cite{mawd:etal:17}. An extension of the idea in \cite{Held2020b}.
+\item Henmi and Copas (HC) \cite{henm:copa:10}.
+\end{enumerate}
+
+
+\paragraph{Extension: Multiplicative variance adjustment}\mbox{}\\
+For the harmonic mean analysis with alternative {\texttt none}, we also try a variant with multiplicative instead of additive variance adjustment \cite{mawd:etal:17}.
+(Note: We think in \cite{mawd:etal:17} $v_i$ and $v_i^2$ are confused.)
+
+\section{Estimates to be stored for each simulation and summary measures to be calculated over all simulations}
+For each simulated meta-analysis we store the assessments (Section~\ref{sec:method}) of all the CI methods (Section~\ref{sec:method}).
+Then we compute the average performance by taking the mean.
+
+
+\section{Number of simulations to be performed}
+We perform the simulation of each scenario 10000 times.
+We repeat the final simulation several times to assess the variability in the simulation results.
+
+
+\section{Criteria to evaluate the performance of statistical methods for different scenarios}
+Assess the CIs by the following criteria 
+\begin{enumerate}
+  \item CI coverage of combined effect, \ie, the proportion of intervals containing the true effect
+  \item CI coverage of study effects, \ie, the proportion of intervals containing the true study specific effect
+  \item CI width 
+  \item CI score \cite{Gnei:Raft:07}
+  \item number of CIs (only for Harmonic mean method with alternative {\texttt none}).
+\end{enumerate}
+
+
+
+\section{Presentation of the simulation results}
+We present the average of each performance measurement in figures. The figures have
+\begin{itemize}
+\item the number of studies $k$ on the x axis
+\item the performance measure on the y axis
+\item one connecting line and color for each value of $i^2$
+\item one panel for each CI method
+\end{itemize}
+
+
+\newpage
+\bibliographystyle{apalike}
+\bibliography{biblio.bib}
+
+
+\end{document}
+
+ 
