@@ -63,24 +63,22 @@ simRE <- function(k, sampleSize, effect, I2, dist=c("t", "Gaussian"),
         n[1] <- 10 * n[1]
     if(large == 2)
         n[1:2] <- 10 * n[1:2]
-    eps2 <- 1/k * sum(2/n)
-    tau2 <- eps2 * I2/(1 - I2)
+    phi <- 1/(1 - I2)
     if(dist == "t") {
         ## the sn::rst(xi=0, omega, nu) distribution has variance
         ## omega^2 nu/(nu-2) (if nu>2)
-        ## where nu is the degrefees of freedom (dof).
+        ## where nu is the degrees of freedom (dof).
         ## So if we want the variance to be tau^2, then 
         ## omega^2 = tau^2 * (nu-2)/nu
         ## We use nu=4 dof then omega^2 = tau^2/2, so half as
         ## large as the heterogeneity variance under normality. 
-        delta <- rst(n=k, xi = effect, omega = sqrt(tau2/2), nu = 4)
+        theta <- rst(n = k, xi = effect, omega = sqrt(phi/n), nu = 4)
     } else {
-        delta <- rnorm(n = k, mean = effect, sd = sqrt(tau2))
+        theta <- rnorm(n = k, mean = effect, sd = sqrt(phi*2/n))
     }
-    theta <- rnorm(n = k, mean = delta, sd = sqrt(2/n))
     ## theta[1:ceiling(r*k)] <- theta[1:ceiling(r*k)] + bias
     se <- sqrt(rchisq(n = k, df = 2*n - 2) / (n*(n - 1)))
-    o <- cbind("theta" = theta, "se" = se, "delta" = delta)
+    o <- cbind("theta" = theta, "se" = se)
     rownames(o) <- NULL
     o
 }
@@ -251,17 +249,14 @@ sim2CIs <- function(x){
 #'
 #' @param x a tibble with columns \code{lower}, \code{upper}, and \code{method}
 #' as obtained from \code{sim2CIs}.
-#' @param theta simulates effect estimates of the study.
-#' @param delta simulates effects of the study.
 #' @param effect effect size.
 #' @return a tibble with columns 
 #' \item{\code{method}}{method}
 #' \item{\code{width}}{with of the intervals}
 #' \item{\code{coverage}}{covarage of the true value 0}
 #' \item{\code{score}}{interval score as defined in Gneiting and Raftery (2007)}
-#' \item{\code{coverage_effects}}{Proportion of study effects covered by the interval(s).}
 #' \item{\code{n}}{Number of intervals}
-CI2measures <- function(x, theta, delta, effect) {
+CI2measures <- function(x, effect) {
     methods <- unique(x$method)
     foreach(i = seq_along(methods), .combine = rbind) %do% {
         x %>% filter(method == methods[i]) %>%
@@ -269,23 +264,22 @@ CI2measures <- function(x, theta, delta, effect) {
             as.matrix() ->
             x_sub
 
-        sapply(theta, function(theta){
-            any(x_sub[,"lower"] <= delta & delta <= x_sub[,"upper"])
-        }) %>%
-            mean() ->
-            coverage_effects
-
         { x_sub[,"upper"] - x_sub[,"lower"] } %>%
             sum(.) ->
             width
+        
         as.numeric(any(x_sub[,"lower"] <= effect & effect <= x_sub[,"upper"])) ->
             coverage
+        
         width + (2/0.05) * min(abs(x_sub[,"lower"]), abs(x_sub[,"upper"])) * (1 - coverage) ->
             score
+        
         tibble(method = methods[i], width = width, coverage = coverage, score = score,
-               coverage_effects = coverage_effects, n = nrow(x_sub))
+               n = nrow(x_sub))
     }
 }
+
+
 
 
 
@@ -324,15 +318,13 @@ sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time
                              effect = pars$effect, I2 = pars$I2,
                              dist = pars$dist, bias = pars$bias)
             CIs <- sim2CIs(x = res)
-            CI2measures(x = CIs, theta = res[,"theta"], delta = res[,"delta"],
-                        effect = pars$effect)
+            CI2measures(x = CIs, effect = pars$effect)
         } -> av
 
         ## compute the mean values of each measure
         av %>% group_by(method) %>%
             summarize(width_mean = mean(width),
                       coverage_mean = mean(coverage),
-                      coverage_effects_mean = mean(coverage_effects),
                       score_mean = mean(score),
                       n = mean(n),
                       ## width_sd = sd(width),
@@ -340,7 +332,7 @@ sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time
                       ## score_sd = sd(score)
                       ) %>%
             gather(key = "measure", value = "value", width_mean, coverage_mean,
-                   coverage_effects_mean, score_mean, n,
+                   score_mean, n
                    ## width_sd, coverage_sd, score_sd
                    ) %>%
             cbind(grid %>% slice(j), .) -> out
@@ -367,7 +359,7 @@ grid <- expand.grid(sampleSize = 50,                  # sample size of trial
 
 ## run simulation, e.g., on the Rambo server of I-MATH
 tic()
-out <- sim(grid = grid, N=10000, cores = 110)
+out <- sim(grid = grid, N=10000, cores = 120)
 toc()
 
 

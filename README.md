@@ -7,6 +7,7 @@ This repository contains:
   - **papers/**: relevant papers.
   - **simulation/**: Simulation study comparing the Harmonic Mean Intervals to established methods. 
   - **simulation/protocol/**: protocol of simulation.
-  
+  - **run_pipeline.sh**: Shell script that runs the simulation and pushes the resulting files to Gitlab.
+ 
 Florian Gerber
 florxgerber@gmail.com

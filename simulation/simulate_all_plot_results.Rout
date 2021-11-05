@@ -12,268 +12,214 @@ Saving 7 x 7 in image
    measure     dist bias large
 2 coverage Gaussian none     0
 Saving 7 x 7 in image
-           measure     dist bias large
-3 coverage_effects Gaussian none     0
+  measure     dist bias large
+3   score Gaussian none     0
 Saving 7 x 7 in image
   measure     dist bias large
-4   score Gaussian none     0
-Saving 7 x 7 in image
-  measure     dist bias large
-5       n Gaussian none     0
+4       n Gaussian none     0
 Saving 7 x 7 in image
   measure dist bias large
-6   width    t none     0
+5   width    t none     0
 Saving 7 x 7 in image
    measure dist bias large
-7 coverage    t none     0
-Saving 7 x 7 in image
-           measure dist bias large
-8 coverage_effects    t none     0
+6 coverage    t none     0
 Saving 7 x 7 in image
   measure dist bias large
-9   score    t none     0
+7   score    t none     0
 Saving 7 x 7 in image
-   measure dist bias large
-10       n    t none     0
+  measure dist bias large
+8       n    t none     0
 Saving 7 x 7 in image
-   measure     dist     bias large
-11   width Gaussian moderate     0
+  measure     dist     bias large
+9   width Gaussian moderate     0
 Saving 7 x 7 in image
     measure     dist     bias large
-12 coverage Gaussian moderate     0
-Saving 7 x 7 in image
-            measure     dist     bias large
-13 coverage_effects Gaussian moderate     0
+10 coverage Gaussian moderate     0
 Saving 7 x 7 in image
    measure     dist     bias large
-14   score Gaussian moderate     0
+11   score Gaussian moderate     0
 Saving 7 x 7 in image
    measure     dist     bias large
-15       n Gaussian moderate     0
+12       n Gaussian moderate     0
 Saving 7 x 7 in image
    measure dist     bias large
-16   width    t moderate     0
+13   width    t moderate     0
 Saving 7 x 7 in image
     measure dist     bias large
-17 coverage    t moderate     0
-Saving 7 x 7 in image
-            measure dist     bias large
-18 coverage_effects    t moderate     0
+14 coverage    t moderate     0
 Saving 7 x 7 in image
    measure dist     bias large
-19   score    t moderate     0
+15   score    t moderate     0
 Saving 7 x 7 in image
    measure dist     bias large
-20       n    t moderate     0
+16       n    t moderate     0
 Saving 7 x 7 in image
    measure     dist   bias large
-21   width Gaussian strong     0
+17   width Gaussian strong     0
 Saving 7 x 7 in image
     measure     dist   bias large
-22 coverage Gaussian strong     0
-Saving 7 x 7 in image
-            measure     dist   bias large
-23 coverage_effects Gaussian strong     0
+18 coverage Gaussian strong     0
 Saving 7 x 7 in image
    measure     dist   bias large
-24   score Gaussian strong     0
+19   score Gaussian strong     0
 Saving 7 x 7 in image
    measure     dist   bias large
-25       n Gaussian strong     0
+20       n Gaussian strong     0
 Saving 7 x 7 in image
    measure dist   bias large
-26   width    t strong     0
+21   width    t strong     0
 Saving 7 x 7 in image
     measure dist   bias large
-27 coverage    t strong     0
-Saving 7 x 7 in image
-            measure dist   bias large
-28 coverage_effects    t strong     0
+22 coverage    t strong     0
 Saving 7 x 7 in image
    measure dist   bias large
-29   score    t strong     0
+23   score    t strong     0
 Saving 7 x 7 in image
    measure dist   bias large
-30       n    t strong     0
+24       n    t strong     0
 Saving 7 x 7 in image
    measure     dist bias large
-31   width Gaussian none     1
+25   width Gaussian none     1
 Saving 7 x 7 in image
     measure     dist bias large
-32 coverage Gaussian none     1
-Saving 7 x 7 in image
-            measure     dist bias large
-33 coverage_effects Gaussian none     1
+26 coverage Gaussian none     1
 Saving 7 x 7 in image
    measure     dist bias large
-34   score Gaussian none     1
+27   score Gaussian none     1
 Saving 7 x 7 in image
    measure     dist bias large
-35       n Gaussian none     1
+28       n Gaussian none     1
 Saving 7 x 7 in image
    measure dist bias large
-36   width    t none     1
+29   width    t none     1
 Saving 7 x 7 in image
     measure dist bias large
-37 coverage    t none     1
-Saving 7 x 7 in image
-            measure dist bias large
-38 coverage_effects    t none     1
+30 coverage    t none     1
 Saving 7 x 7 in image
    measure dist bias large
-39   score    t none     1
+31   score    t none     1
 Saving 7 x 7 in image
    measure dist bias large
-40       n    t none     1
+32       n    t none     1
 Saving 7 x 7 in image
    measure     dist     bias large
-41   width Gaussian moderate     1
+33   width Gaussian moderate     1
 Saving 7 x 7 in image
     measure     dist     bias large
-42 coverage Gaussian moderate     1
-Saving 7 x 7 in image
-            measure     dist     bias large
-43 coverage_effects Gaussian moderate     1
+34 coverage Gaussian moderate     1
 Saving 7 x 7 in image
    measure     dist     bias large
-44   score Gaussian moderate     1
+35   score Gaussian moderate     1
 Saving 7 x 7 in image
    measure     dist     bias large
-45       n Gaussian moderate     1
+36       n Gaussian moderate     1
 Saving 7 x 7 in image
    measure dist     bias large
-46   width    t moderate     1
+37   width    t moderate     1
 Saving 7 x 7 in image
     measure dist     bias large
-47 coverage    t moderate     1
-Saving 7 x 7 in image
-            measure dist     bias large
-48 coverage_effects    t moderate     1
+38 coverage    t moderate     1
 Saving 7 x 7 in image
    measure dist     bias large
-49   score    t moderate     1
+39   score    t moderate     1
 Saving 7 x 7 in image
    measure dist     bias large
-50       n    t moderate     1
+40       n    t moderate     1
 Saving 7 x 7 in image
    measure     dist   bias large
-51   width Gaussian strong     1
+41   width Gaussian strong     1
 Saving 7 x 7 in image
     measure     dist   bias large
-52 coverage Gaussian strong     1
-Saving 7 x 7 in image
-            measure     dist   bias large
-53 coverage_effects Gaussian strong     1
+42 coverage Gaussian strong     1
 Saving 7 x 7 in image
    measure     dist   bias large
-54   score Gaussian strong     1
+43   score Gaussian strong     1
 Saving 7 x 7 in image
    measure     dist   bias large
-55       n Gaussian strong     1
+44       n Gaussian strong     1
 Saving 7 x 7 in image
    measure dist   bias large
-56   width    t strong     1
+45   width    t strong     1
 Saving 7 x 7 in image
     measure dist   bias large
-57 coverage    t strong     1
-Saving 7 x 7 in image
-            measure dist   bias large
-58 coverage_effects    t strong     1
+46 coverage    t strong     1
 Saving 7 x 7 in image
    measure dist   bias large
-59   score    t strong     1
+47   score    t strong     1
 Saving 7 x 7 in image
    measure dist   bias large
-60       n    t strong     1
+48       n    t strong     1
 Saving 7 x 7 in image
    measure     dist bias large
-61   width Gaussian none     2
+49   width Gaussian none     2
 Saving 7 x 7 in image
     measure     dist bias large
-62 coverage Gaussian none     2
-Saving 7 x 7 in image
-            measure     dist bias large
-63 coverage_effects Gaussian none     2
+50 coverage Gaussian none     2
 Saving 7 x 7 in image
    measure     dist bias large
-64   score Gaussian none     2
+51   score Gaussian none     2
 Saving 7 x 7 in image
    measure     dist bias large
-65       n Gaussian none     2
+52       n Gaussian none     2
 Saving 7 x 7 in image
    measure dist bias large
-66   width    t none     2
+53   width    t none     2
 Saving 7 x 7 in image
     measure dist bias large
-67 coverage    t none     2
-Saving 7 x 7 in image
-            measure dist bias large
-68 coverage_effects    t none     2
+54 coverage    t none     2
 Saving 7 x 7 in image
    measure dist bias large
-69   score    t none     2
+55   score    t none     2
 Saving 7 x 7 in image
    measure dist bias large
-70       n    t none     2
+56       n    t none     2
 Saving 7 x 7 in image
    measure     dist     bias large
-71   width Gaussian moderate     2
+57   width Gaussian moderate     2
 Saving 7 x 7 in image
     measure     dist     bias large
-72 coverage Gaussian moderate     2
-Saving 7 x 7 in image
-            measure     dist     bias large
-73 coverage_effects Gaussian moderate     2
+58 coverage Gaussian moderate     2
 Saving 7 x 7 in image
    measure     dist     bias large
-74   score Gaussian moderate     2
+59   score Gaussian moderate     2
 Saving 7 x 7 in image
    measure     dist     bias large
-75       n Gaussian moderate     2
+60       n Gaussian moderate     2
 Saving 7 x 7 in image
    measure dist     bias large
-76   width    t moderate     2
+61   width    t moderate     2
 Saving 7 x 7 in image
     measure dist     bias large
-77 coverage    t moderate     2
-Saving 7 x 7 in image
-            measure dist     bias large
-78 coverage_effects    t moderate     2
+62 coverage    t moderate     2
 Saving 7 x 7 in image
    measure dist     bias large
-79   score    t moderate     2
+63   score    t moderate     2
 Saving 7 x 7 in image
    measure dist     bias large
-80       n    t moderate     2
+64       n    t moderate     2
 Saving 7 x 7 in image
    measure     dist   bias large
-81   width Gaussian strong     2
+65   width Gaussian strong     2
 Saving 7 x 7 in image
     measure     dist   bias large
-82 coverage Gaussian strong     2
-Saving 7 x 7 in image
-            measure     dist   bias large
-83 coverage_effects Gaussian strong     2
+66 coverage Gaussian strong     2
 Saving 7 x 7 in image
    measure     dist   bias large
-84   score Gaussian strong     2
+67   score Gaussian strong     2
 Saving 7 x 7 in image
    measure     dist   bias large
-85       n Gaussian strong     2
+68       n Gaussian strong     2
 Saving 7 x 7 in image
    measure dist   bias large
-86   width    t strong     2
+69   width    t strong     2
 Saving 7 x 7 in image
     measure dist   bias large
-87 coverage    t strong     2
-Saving 7 x 7 in image
-            measure dist   bias large
-88 coverage_effects    t strong     2
+70 coverage    t strong     2
 Saving 7 x 7 in image
    measure dist   bias large
-89   score    t strong     2
+71   score    t strong     2
 Saving 7 x 7 in image
    measure dist   bias large
-90       n    t strong     2
+72       n    t strong     2
 Saving 7 x 7 in image
-There were 36 warnings (use warnings() to see them)
+There were 18 warnings (use warnings() to see them)
