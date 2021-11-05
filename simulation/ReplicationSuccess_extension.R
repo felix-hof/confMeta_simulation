@@ -274,9 +274,9 @@ hMeanChiSqCIphi <- function(thetahat, se, w = rep(1, length(thetahat)),
                             alternative = c("two.sided", "greater", "less", "none"),
                             level = 0.95, wGamma = rep(1, length(unique(thetahat)) - 1)){
     phi <- estimatePhi(thetahat=thetahat, se=se)
-    hMeanChiSqCI(thetahat = thetahat, se = se, w = w, 
-                 alternative = alternative,
-                 level = level, wGamma = wGamma, phi=phi)
+    hMeanChiSqPhiCI(thetahat = thetahat, se = se, w = w,
+                    alternative = alternative,
+                    level = level, wGamma = wGamma, phi=phi)
 }
 
 

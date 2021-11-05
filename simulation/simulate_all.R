@@ -219,7 +219,7 @@ sim2CIs <- function(x){
                            tau2 = REML$tau2, alternative = "none")
 
     ## HMeanNone_phi
-    HM_phi <- hMeanChiSqPhiCI(thetahat = x[, "theta"], se = x[, "se"], 
+    HM_phi <- hMeanChiSqCIphi(thetahat = x[, "theta"], se = x[, "se"], 
                                alternative = "none")
 
     tibble(lower = c(HC$ci.lb,
@@ -367,7 +367,7 @@ grid <- expand.grid(sampleSize = 50,                  # sample size of trial
 
 ## run simulation, e.g., on the Rambo server of I-MATH
 tic()
-out <- sim(grid = grid, N=10000, cores = 120)
+out <- sim(grid = grid, N=10000, cores = 110)
 toc()
 
 
