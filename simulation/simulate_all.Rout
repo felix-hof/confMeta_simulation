@@ -1,0 +1,853 @@
+
+R version 4.0.2 (2020-06-22) -- "Taking Off Again"
+Copyright (C) 2020 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> ## This script can be used to simulate results from a random effects mode with
+> ## selection publication bias, compute several CIs for the effect estimates and
+> ## assess the CIs using several metrics.
+> ##
+> ## Here we investigate the effect of inbalanced study sizes. To this end, we
+> ## we make one or two studies ten times the size of the others.
+> ##
+> ## It provides the functions:
+> ## - simREbias():   simulates data from a random effects model with selection bias
+> ##                  for meta analyses, where the effects (theta) describe mean differences.  
+> ## - simRE():       simulates data from a random effects model for meta analyses,
+> ##                  where the effects (theta) describe mean differences.  
+> ## - pAccept():     computes the probability of publishing a study under the assumption
+> ##                  of a 'moderate' and 'strong' publication bias as mentioned in
+> ##                  Henmi & Copas, 2009.
+> ## - sim2CIs():     takes data from simRE() as input and computes several
+> ##                  confidence intervals for the combined effect estimate
+> ## - CI2measures(): takes output from simRE() and sim2CI() and computes several
+> ##                  quality measures of the CIs (width, coverage, score)
+> ## - sim():         run entire simulation: generate data, compute CIs, assess CIs
+> ##
+> ## Florian Gerber, florian.gerber@uzh.ch, Oct. 14, 2021
+> rm(list = ls())
+> library(meta)
+Loading 'meta' package (version 4.19-0).
+Type 'help(meta)' for a brief overview.
+> source("ReplicationSuccess_extension.R")
+> library(tidyverse); theme_set(theme_bw())
+── Attaching packages ─────────────────────────────────────── tidyverse 1.3.1 ──
+✔ ggplot2 3.3.5     ✔ purrr   0.3.4
+✔ tibble  3.1.4     ✔ dplyr   1.0.7
+✔ tidyr   1.1.3     ✔ stringr 1.4.0
+✔ readr   2.0.1     ✔ forcats 0.5.1
+── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+✖ dplyr::filter() masks stats::filter()
+✖ dplyr::lag()    masks stats::lag()
+> library(doParallel)
+Loading required package: foreach
+
+Attaching package: ‘foreach’
+
+The following objects are masked from ‘package:purrr’:
+
+    accumulate, when
+
+Loading required package: iterators
+Loading required package: parallel
+> library(doRNG)
+Loading required package: rngtools
+> library(RhpcBLASctl); blas_set_num_threads(1) # multi threading of BLAS
+> library(tictoc)
+> library(metafor)
+Loading required package: Matrix
+
+Attaching package: ‘Matrix’
+
+The following objects are masked from ‘package:tidyr’:
+
+    expand, pack, unpack
+
+
+Loading the 'metafor' package (version 3.0-2). For an
+introduction to the package please type: help(metafor)
+
+> library(sn)
+Loading required package: stats4
+
+Attaching package: ‘sn’
+
+The following object is masked from ‘package:stats’:
+
+    sd
+
+> 
+> #' Simulate effect estimates and their standard errors using a random effects model
+> #'
+> #' Simulate effect estimates and their standard error using a random effects model.
+> #' @param k number of trials
+> #' @param sampleSize sample size of the trial
+> #' @param effect effect size
+> #' @param I2 Higgin's I^2 heterogeneity measure
+> #' @param dist distribution to simulate the study effect. Either "t" or "Gaussian".
+> #' the sample size as specified by \code{sampleSize}.
+> #' @return a matrix \code{k} x 2 matrix with columns
+> #' \code{theta} (effect estimates) and
+> #' \code{se} (standard errors).
+> simRE <- function(k, sampleSize, effect, I2, dist=c("t", "Gaussian"),
++                   large = 0) {
++     stopifnot(length(k) == 1,
++               length(sampleSize) == 1,
++               is.numeric(effect),
++               length(effect) == 1,
++               is.finite(effect),
++               length(I2) == 1,
++               0 <= I2, I2 < 1,
++               !is.null(dist),
++               !is.null(large),
++               is.numeric(large),
++               length(large)==1,
++               large %in% c(0,1,2))
++     dist <- match.arg(dist)
++     n <- rep(sampleSize, k)
++     if(large == 1)
++         n[1] <- 10 * n[1]
++     if(large == 2)
++         n[1:2] <- 10 * n[1:2]
++     eps2 <- 1/k * sum(2/n)
++     tau2 <- eps2 * I2/(1 - I2)
++     if(dist == "t") {
++         ## the sn::rst(xi=0, omega, nu) distribution has variance
++         ## omega^2 nu/(nu-2) (if nu>2)
++         ## where nu is the degrefees of freedom (dof).
++         ## So if we want the variance to be tau^2, then 
++         ## omega^2 = tau^2 * (nu-2)/nu
++         ## We use nu=4 dof then omega^2 = tau^2/2, so half as
++         ## large as the heterogeneity variance under normality. 
++         delta <- rst(n=k, xi = effect, omega = sqrt(tau2/2), nu = 4)
++     } else {
++         delta <- rnorm(n = k, mean = effect, sd = sqrt(tau2))
++     }
++     theta <- rnorm(n = k, mean = delta, sd = sqrt(2/n))
++     ## theta[1:ceiling(r*k)] <- theta[1:ceiling(r*k)] + bias
++     se <- sqrt(rchisq(n = k, df = 2*n - 2) / (n*(n - 1)))
++     o <- cbind("theta" = theta, "se" = se, "delta" = delta)
++     rownames(o) <- NULL
++     o
++ }
+> 
+> 
+> #' computes the probability of publishing a study under the assumption
+> #' of 'moderate' and 'strong' publication bias as mentioned in
+> #'
+> #' Henmi & Copas, Confidence intervals for random effects
+> #' meta-analysis and robustness to publication bias, 2009, eq. 23
+> #'
+> #' @param theta vector of study effects
+> #' @param se vector of study effects standard errors
+> #' @param bias either 'strong' or 'moderate'.
+> #' Indicating the amount of publication bias. 
+> #' @return probabilities of publishing the studies
+> #' @examples
+> #' pAccept(theta  = c(0, 0, 1, 1, 2, 2),
+> #'         sigma2 = c(1, 2, 1, 2, 1, 2), bias = "moderate")
+> #' pAccept(theta  = c(0, 0, 1, 1, 2, 2),
+> #'         sigma2 = c(1, 2, 1, 2, 1, 2), bias = "strong")
+> pAccept <- function(theta, se, bias = c("moderate", "strong")){
++     ## Begg & Mazumdar, Biometrics, 1994
++     ## moderate bias: beta = 4, gamma = 3
++     ## strong bias:   beta = 4, gamma = 1.5
++     stopifnot(!is.null(bias))
++     bias <- match.arg(bias)
++     if(bias == "moderate"){
++         beta <- 4
++         gamma <- 3
++     } else {
++         beta <- 4
++         gamma <- 1.5
++     }
++     stopifnot(length(beta) == 1, is.finite(beta), 0 < beta,
++               length(gamma) == 1, is.finite(gamma), 0 < gamma)
++     
++     exp(-beta * (dnorm(-theta / se))^gamma)
++ }
+> 
+> #' Simulate effect estimates and their standard errors using a random effects model
+> #' under none, moderate, or strong publication bias
+> #'
+> #' @param k number of trials
+> #' @param sampleSize sample size of the trial
+> #' @param effect effect size
+> #' @param I2 Higgin's I^2 heterogeneity measure
+> #' @param dist distribution to simulate the study effect. Either "t" or "Gaussian".
+> #' @param large A number in \code{c(0,1,2)} indicating the number of studies that have ten times
+> #' the sample size as specified by \code{sampleSize}. Publication bias is only applied to the smaller
+> #' studies with sample size specified by \code{sampleSize}. 
+> #' @param bias either 'none', 'moderate' or 'strong' as used in Henmi & Copas (2010).
+> #' @references
+> #' Henmi, M. and Copas, J. B. (2010). Confidence intervals for random effects
+> #' meta-analysis and robustness to publication bias. Statistics in Medicine,
+> #' 29(29):2969-2983.
+> #' @return a matrix \code{k} x 2 matrix with columns
+> #' \code{theta} (effect estimates) and
+> #' \code{se} (standard errors).
+> #' @examples
+> #' simREbias(4, sampleSize= 50, effect=.2, I2=.3, dist="Gaussian", large=0)
+> #' simREbias(4, sampleSize= 50, effect=.2, I2=.3, dist="Gaussian", large=1)
+> #' simREbias(4, sampleSize= 50, effect=.2, I2=.3, dist="Gaussian", large=2)
+> #' simREbias(4, sampleSize= 50, effect=.2, I2=.3, dist="Gaussian", large=2, bias = "moderate")
+> #' simREbias(4, sampleSize= 50, effect=.2, I2=.3, dist="Gaussian", large=1, bias = "strong")
+> simREbias <- function(k, sampleSize, effect, I2, dist = c("t", "Gaussian"), large = 0,
++                       bias = c("none", "moderate", "strong"),
++                       verbose = TRUE){
++     stopifnot(!is.null(bias))
++     bias <- match.arg(bias)
++ 
++     if(bias == "none")
++         return(simRE(k=k, sampleSize=sampleSize, effect = effect, I2=I2, dist=dist, large=large))
++ 
++ 
++     ## first ignore the 'large' 
++     o <- simRE(k=k*3, sampleSize=sampleSize, effect=effect, I2=I2, dist=dist)
++     pa <- pAccept(theta = o[,"theta"], se = o[,"se"], bias = bias)
++     keep <- rbernoulli(n = k*3, p = pa)
++     while(k > sum(keep)) {
++         if(verbose)
++             cat(".")
++         o2 <- simRE(k=k*3, sampleSize=sampleSize, effect = effect, I2=I2, dist=dist,  large=0)
++         pa2 <- pAccept(theta = o2[,"theta"], se = o2[,"se"], bias = bias)
++         keep2 <- rbernoulli(n = k*3, p = pa2)
++         o <- rbind(o, o2)
++         keep <- c(keep, keep2)
++     }
++     o <- o[keep,][1:k,]
++ 
++     ## add large studies
++     if(large == 1){
++         oLarge <- simRE(k=k, sampleSize=sampleSize, effect = effect, I2=I2, dist=dist, large=large)
++         o <- rbind(oLarge[1,], o[-1,]) 
++     }
++     if(large == 2){
++         oLarge <- simRE(k=k, sampleSize=sampleSize, effect = effect, I2=I2, dist=dist, large=large)
++         o <- rbind(oLarge[1:2,], o[-c(1,2),]) 
++     }
++     o    
++ }
+> 
+> 
+> #' Confidence intervals from effect estimates and their standard errors
+> #'
+> #' Takes the output of \code{simRE} and returns CIs for the combined effect using the
+> #' indicated methods.
+> #' @param x matrix output from \code{simRE}.
+> #' @return a tibble with columns \code{lower}, \code{upper}, and \code{method}.
+> sim2CIs <- function(x){
++     ## Henmy & Copas confidence Interval
++     HC <- metafor::hc(object = metafor::rma(yi = x[, "theta"], sei = x[, "se"]))
++ 
++     ## standard metagen with REML estimation of tau
++     REML <- metagen(TE = x[, "theta"], seTE = x[, "se"], sm = "MD", 
++                     method.tau = "REML")
++ 
++     ## Hartung & Knapp
++     HK <- metagen(TE = x[, "theta"], seTE = x[, "se"], sm = "MD", 
++                   method.tau = "REML", hakn = TRUE)
++ 
++     ## HMeam2sided
++     if(nrow(x) <= 5) {
++         HM2 <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
++                             alternative = "two.sided")
++     } else {
++         HM2 <- list(CI = cbind(lower = NA, upper = NA))
++     }
++ 
++     ## HMeanNone
++     HM <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
++                        alternative = "none")
++ 
++     ## HMeanNone_tau2
++     HM_tau2 <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
++                            tau2 = REML$tau2, alternative = "none")
++ 
++     ## HMeanNone_phi
++     HM_phi <- hMeanChiSqPhiCI(thetahat = x[, "theta"], se = x[, "se"], 
++                                alternative = "none")
++ 
++     tibble(lower = c(HC$ci.lb,
++                      REML$lower.random,
++                      HK$lower.random,
++                      HM2$CI[,"lower"], 
++                      HM$CI[,"lower"],
++                      HM_tau2$CI[,"lower"],
++                      HM_phi$CI[,"lower"]),
++            upper = c(HC$ci.ub,
++                      REML$upper.random,
++                      HK$upper.random,
++                      HM2$CI[,"upper"], 
++                      HM$CI[,"upper"],
++                      HM_tau2$CI[,"upper"],
++                      HM_phi$CI[,"upper"]),
++            method = c("Henmy & Copas",
++                       "REML",
++                       "Hartung & Knapp",
++                       "Harmonic Mean two sided",
++                       rep("Harmonic Mean", nrow(HM$CI)),
++                       rep("Harmonic Mean Additive", nrow(HM_tau2$CI)),
++                       rep("Harmonic Mean Multiplicative", nrow(HM_phi$CI))))
++ }
+> 
+> 
+> 
+> #' Computes quality measures for CIs
+> #'
+> #' @param x a tibble with columns \code{lower}, \code{upper}, and \code{method}
+> #' as obtained from \code{sim2CIs}.
+> #' @param theta simulates effect estimates of the study.
+> #' @param delta simulates effects of the study.
+> #' @param effect effect size.
+> #' @return a tibble with columns 
+> #' \item{\code{method}}{method}
+> #' \item{\code{width}}{with of the intervals}
+> #' \item{\code{coverage}}{covarage of the true value 0}
+> #' \item{\code{score}}{interval score as defined in Gneiting and Raftery (2007)}
+> #' \item{\code{coverage_effects}}{Proportion of study effects covered by the interval(s).}
+> #' \item{\code{n}}{Number of intervals}
+> CI2measures <- function(x, theta, delta, effect) {
++     methods <- unique(x$method)
++     foreach(i = seq_along(methods), .combine = rbind) %do% {
++         x %>% filter(method == methods[i]) %>%
++             select(lower, upper) %>%
++             as.matrix() ->
++             x_sub
++ 
++         sapply(theta, function(theta){
++             any(x_sub[,"lower"] <= delta & delta <= x_sub[,"upper"])
++         }) %>%
++             mean() ->
++             coverage_effects
++ 
++         { x_sub[,"upper"] - x_sub[,"lower"] } %>%
++             sum(.) ->
++             width
++         as.numeric(any(x_sub[,"lower"] <= effect & effect <= x_sub[,"upper"])) ->
++             coverage
++         width + (2/0.05) * min(abs(x_sub[,"lower"]), abs(x_sub[,"upper"])) * (1 - coverage) ->
++             score
++         tibble(method = methods[i], width = width, coverage = coverage, score = score,
++                coverage_effects = coverage_effects, n = nrow(x_sub))
++     }
++ }
+> 
+> 
+> 
+> #' Simulate N times, compute CIs, assess CIs
+> #'
+> #' Takes a data.frame of parameter configurations, the number replicates \code{N} and
+> #' the number of cores to simulate accordingly.
+> #'
+> #' @param grid data.frame with columns
+> #' \item{sampleSize}{Sample size of the trial}
+> #' \item{effect}{mean effect of simulated trials}
+> #' \item{I2}{Higgin's I^2 heterogeneity measure}
+> #' \item{k}{number of studies}
+> #' \item{dist}{distribution used to simulate the study effects from}
+> #' @param N number of replications to be done for each scenario.
+> #' @param cores number of CPUs to use for the simulation.
+> #' The default value is obtained from \code{detectCores()}. 
+> #' @return tibble in long format with columns
+> #' \item{sampleSize}{sample size}
+> #' \item{I2}{Higgin's I^2 heterogeneity measure}
+> #' \item{k}{number of studies}
+> #' \item{method}{CI method}
+> #' \item{measure}{measure to assess the CI}
+> #' \item{value}{value of the measure}
+> sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time())){
++     stopifnot(is.data.frame(grid),
++               c("sampleSize", "I2", "k", "dist", "effect") %in% names(grid),
++               is.numeric(N), length(N) == 1, 1 <= N)
++     registerDoParallel(cores)
++     foreach(j = seq_len(nrow(grid)), .combine = rbind, .options.RNG=seed) %dorng% {
++         cat("start", j, "of", nrow(grid), fill=TRUE)
++         grid %>% slice(j) -> pars
++ 
++         foreach(i = seq_len(N), .combine = rbind) %do% {
++             res <- simREbias(k = pars$k, sampleSize = pars$sampleSize,
++                              effect = pars$effect, I2 = pars$I2,
++                              dist = pars$dist, bias = pars$bias)
++             CIs <- sim2CIs(x = res)
++             CI2measures(x = CIs, theta = res[,"theta"], delta = res[,"delta"],
++                         effect = pars$effect)
++         } -> av
++ 
++         ## compute the mean values of each measure
++         av %>% group_by(method) %>%
++             summarize(width_mean = mean(width),
++                       coverage_mean = mean(coverage),
++                       coverage_effects_mean = mean(coverage_effects),
++                       score_mean = mean(score),
++                       n = mean(n),
++                       ## width_sd = sd(width),
++                       ## coverage_sd = sd(coverage),
++                       ## score_sd = sd(score)
++                       ) %>%
++             gather(key = "measure", value = "value", width_mean, coverage_mean,
++                    coverage_effects_mean, score_mean, n,
++                    ## width_sd, coverage_sd, score_sd
++                    ) %>%
++             cbind(grid %>% slice(j), .) -> out
++         out
++     } -> o
++     attr(o, "seed") <- seed
++     attr(o, "N") <- N
++     o
++ }
+> 
+> 
+> 
+> 
+> ## set parameter grid to be evaluated 
+> grid <- expand.grid(sampleSize = 50,                  # sample size of trial
++                     effect = 0.2,                     # average effect, impacts selection bias
++                     I2 = c(0, 0.3, 0.6, 0.9),         # Higgin's I^2 heterogeneity measure
++                     k = c(2, 3, 5, 10, 20),           # number of studies
++                     dist = c("Gaussian", "t"),        # distribution 
++                     bias = c("none", "moderate", "strong"),
++                     large = c(0, 1, 2),
++                     stringsAsFactors = FALSE)        
+> 
+> 
+> ## run simulation, e.g., on the Rambo server of I-MATH
+> tic()
+> out <- sim(grid = grid, N=10000, cores = 120)
+start 1 of 360
+start 2 of 360
+start 3 of 360
+start 4 of 360
+start 5 of 360
+start 6 of 360
+start 7 of 360
+start 8 of 360
+start 9 of 360
+start 10 of 360
+start 11 of 360
+start 12 of 360
+start 13 of 360
+start 14 of 360
+start 15 of 360
+start 16 of 360
+start 17 of 360
+start 18 of 360
+start 19 of 360
+start 20 of 360
+start 21 of 360
+start 22 of 360
+start 23 of 360
+start 24 of 360
+start 25 of 360
+start 26 of 360
+start 27 of 360
+start 28 of 360
+start 29 of 360
+start 30 of 360
+start 31 of 360
+start 32 of 360
+start 33 of 360
+start 34 of 360
+start 35 of 360
+start 36 of 360
+start 37 of 360
+start 38 of 360
+start 39 of 360
+start 40 of 360
+start 41 of 360
+start 42 of 360
+start 43 of 360
+start 44 of 360
+start 45 of 360
+start 46 of 360
+start 47 of 360
+start 48 of 360
+start 49 of 360
+start 50 of 360
+start 51 of 360
+start 52 of 360
+start 53 of 360
+start 54 of 360
+start 55 of 360
+start 56 of 360
+start 57 of 360
+start 58 of 360
+start 59 of 360
+start 60 of 360
+start 61 of 360
+start 62 of 360
+start 63 of 360
+start 64 of 360
+start 65 of 360
+start 66 of 360
+start 67 of 360
+start 68 of 360
+start 69 of 360
+start 70 of 360
+start 71 of 360
+start 72 of 360
+start 73 of 360
+start 74 of 360
+start 75 of 360
+start 76 of 360
+start 77 of 360
+start 78 of 360
+start 79 of 360
+start 80 of 360
+start 81 of 360
+start 82 of 360
+start 83 of 360
+start 84 of 360
+start 85 of 360
+start 86 of 360
+start 87 of 360
+start 88 of 360
+start 89 of 360
+start 90 of 360
+start 91 of 360
+start 92 of 360
+start 93 of 360
+start 94 of 360
+start 95 of 360
+start 96 of 360
+start 97 of 360
+start 98 of 360
+start 99 of 360
+start 100 of 360
+start 101 of 360
+start 102 of 360
+start 103 of 360
+start 104 of 360
+start 105 of 360
+start 106 of 360
+start 107 of 360
+start 108 of 360
+start 109 of 360
+start 110 of 360
+start 111 of 360
+start 112 of 360
+start 113 of 360
+start 114 of 360
+start 115 of 360
+start 116 of 360
+start 117 of 360
+start 118 of 360
+start 119 of 360
+start 120 of 360
+...............................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................start 143 of 360
+start 161 of 360
+......start 123 of 360
+.start 201 of 360
+start 144 of 360
+start 181 of 360
+.start 122 of 360
+start 162 of 360
+start 184 of 360
+..start 203 of 360
+.start 163 of 360
+.start 202 of 360
+.start 223 of 360
+start 141 of 360
+start 121 of 360
+start 222 of 360
+start 142 of 360
+start 224 of 360
+.start 182 of 360
+start 183 of 360
+start 221 of 360
+start 204 of 360
+.start 164 of 360
+..start 124 of 360
+...........................................................................start 165 of 360
+...start 186 of 360
+....start 185 of 360
+..start 146 of 360
+start 166 of 360
+..start 225 of 360
+.start 125 of 360
+start 145 of 360
+start 226 of 360
+...start 126 of 360
+start 206 of 360
+.......start 205 of 360
+..start 227 of 360
+......start 207 of 360
+.start 127 of 360
+.start 147 of 360
+.start 167 of 360
+...start 187 of 360
+................start 229 of 360
+....start 148 of 360
+..start 149 of 360
+.start 169 of 360
+.start 228 of 360
+start 188 of 360
+.start 129 of 360
+..start 209 of 360
+.start 130 of 360
+start 189 of 360
+...start 170 of 360
+start 150 of 360
+.start 168 of 360
+.start 128 of 360
+.start 230 of 360
+start 210 of 360
+.start 190 of 360
+start 208 of 360
+......start 151 of 360
+..........start 191 of 360
+..start 231 of 360
+.start 131 of 360
+.start 211 of 360
+....start 171 of 360
+................................start 152 of 360
+....start 153 of 360
+...start 193 of 360
+.......start 192 of 360
+....start 133 of 360
+start 213 of 360
+....start 173 of 360
+..start 232 of 360
+.start 233 of 360
+start 172 of 360
+..start 132 of 360
+.....start 174 of 360
+start 212 of 360
+start 154 of 360
+start 134 of 360
+.......start 234 of 360
+.....start 194 of 360
+.start 214 of 360
+......................................start 195 of 360
+....start 155 of 360
+........start 135 of 360
+.start 175 of 360
+.....start 235 of 360
+....start 215 of 360
+...............................................................................start 156 of 360
+....start 196 of 360
+...........start 136 of 360
+.start 176 of 360
+......start 236 of 360
+start 216 of 360
+.......................................start 177 of 360
+..start 137 of 360
+..start 197 of 360
+.....start 157 of 360
+.start 217 of 360
+.........start 237 of 360
+..................................start 158 of 360
+.....................start 138 of 360
+..start 178 of 360
+.....start 198 of 360
+....start 218 of 360
+start 238 of 360
+............................................................................start 159 of 360
+..start 199 of 360
+......................start 139 of 360
+.................start 179 of 360
+..start 219 of 360
+.......start 239 of 360
+...................................................................................................................................................................start 160 of 360
+....start 200 of 360
+........start 180 of 360
+..start 140 of 360
+..start 240 of 360
+....................start 220 of 360
+..............................................................................................................................................................................................................................................................................................................................start 243 of 360
+.....start 282 of 360
+start 321 of 360
+start 263 of 360
+...start 281 of 360
+.......start 301 of 360
+...start 242 of 360
+.....start 283 of 360
+start 264 of 360
+start 342 of 360
+start 262 of 360
+start 261 of 360
+.start 303 of 360
+.start 343 of 360
+start 304 of 360
+start 323 of 360
+start 322 of 360
+...start 241 of 360
+start 341 of 360
+..start 302 of 360
+start 344 of 360
+start 324 of 360
+start 244 of 360
+..........start 284 of 360
+...................................................................................................................................................................start 285 of 360
+........start 345 of 360
+..start 305 of 360
+....start 245 of 360
+.start 246 of 360
+...start 306 of 360
+.start 265 of 360
+.......start 325 of 360
+.start 266 of 360
+...start 346 of 360
+.start 326 of 360
+.start 286 of 360
+.............start 267 of 360
+..start 247 of 360
+start 307 of 360
+.start 347 of 360
+....start 327 of 360
+.....start 287 of 360
+................................................................start 289 of 360
+...start 349 of 360
+..start 329 of 360
+...start 268 of 360
+....start 269 of 360
+start 308 of 360
+start 309 of 360
+...start 348 of 360
+start 249 of 360
+...start 250 of 360
+..........start 270 of 360
+start 290 of 360
+..start 350 of 360
+..start 248 of 360
+start 310 of 360
+start 288 of 360
+.............start 330 of 360
+.......start 328 of 360
+........................start 271 of 360
+................start 311 of 360
+...start 251 of 360
+..start 351 of 360
+....start 331 of 360
+..............start 291 of 360
+..............................................................................................................start 272 of 360
+.........start 313 of 360
+..start 312 of 360
+.......start 273 of 360
+.start 293 of 360
+.start 333 of 360
+..start 253 of 360
+...start 352 of 360
+........start 292 of 360
+..start 353 of 360
+..........start 252 of 360
+...............start 332 of 360
+.........start 294 of 360
+start 274 of 360
+.start 254 of 360
+.......start 354 of 360
+.............start 314 of 360
+.........................start 334 of 360
+......................................................................................start 275 of 360
+........start 315 of 360
+........start 255 of 360
+......start 295 of 360
+...........start 355 of 360
+...............start 335 of 360
+................................................................................................................................................................................................start 276 of 360
+.............start 316 of 360
+.......start 296 of 360
+..start 356 of 360
+.............start 256 of 360
+........start 336 of 360
+............................................................................start 317 of 360
+...start 257 of 360
+start 297 of 360
+.start 277 of 360
+.start 337 of 360
+.............................start 357 of 360
+..........................................................start 278 of 360
+.............................start 258 of 360
+...........start 318 of 360
+...start 298 of 360
+....................start 338 of 360
+......start 358 of 360
+...........................................................start 319 of 360
+start 279 of 360
+..........start 259 of 360
+..........start 299 of 360
+...start 339 of 360
+.......start 359 of 360
+.................................................start 280 of 360
+start 320 of 360
+.start 360 of 360
+start 300 of 360
+start 260 of 360
+start 340 of 360
+.> toc()
+9268.782 sec elapsed
+> 
+> 
+> ## save results
+> dir.create("RData", showWarnings=FALSE)
+> sessionInfo <- sessionInfo()
+> print(sessionInfo)
+R version 4.0.2 (2020-06-22)
+Platform: x86_64-pc-linux-gnu (64-bit)
+Running under: Ubuntu 18.04.5 LTS
+
+Matrix products: default
+BLAS:   /usr/lib/x86_64-linux-gnu/libf77blas.so.3.10.3
+LAPACK: /usr/lib/x86_64-linux-gnu/atlas/liblapack.so.3.10.3
+
+locale:
+ [1] LC_CTYPE=en_US.UTF-8       LC_NUMERIC=C              
+ [3] LC_TIME=en_US.UTF-8        LC_COLLATE=C              
+ [5] LC_MONETARY=en_US.UTF-8    LC_MESSAGES=en_US.UTF-8   
+ [7] LC_PAPER=de_CH.UTF-8       LC_NAME=C                 
+ [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+[11] LC_MEASUREMENT=en_US.UTF-8 LC_IDENTIFICATION=C       
+
+attached base packages:
+[1] stats4    parallel  stats     graphics  grDevices utils     datasets 
+[8] methods   base     
+
+other attached packages:
+ [1] sn_2.0.0             metafor_3.0-2        Matrix_1.3-4        
+ [4] tictoc_1.0.1         RhpcBLASctl_0.20-137 doRNG_1.8.2         
+ [7] rngtools_1.5         doParallel_1.0.16    iterators_1.0.12    
+[10] foreach_1.5.1        forcats_0.5.1        stringr_1.4.0       
+[13] dplyr_1.0.7          purrr_0.3.4          readr_2.0.1         
+[16] tidyr_1.1.3          tibble_3.1.4         ggplot2_3.3.5       
+[19] tidyverse_1.3.1      meta_4.19-0         
+
+loaded via a namespace (and not attached):
+ [1] httr_1.4.2          jsonlite_1.7.2      splines_4.0.2      
+ [4] tmvnsim_1.0-2       modelr_0.1.8        assertthat_0.2.1   
+ [7] cellranger_1.1.0    numDeriv_2016.8-1.1 pillar_1.6.2       
+[10] backports_1.1.9     lattice_0.20-41     glue_1.4.2         
+[13] digest_0.6.25       rvest_1.0.1         minqa_1.2.4        
+[16] colorspace_2.0-2    pkgconfig_2.0.3     broom_0.7.9        
+[19] haven_2.3.1         scales_1.1.1        tzdb_0.1.2         
+[22] lme4_1.1-27.1       generics_0.1.0      ellipsis_0.3.2     
+[25] withr_2.4.2         cli_3.0.1           mnormt_2.0.2       
+[28] magrittr_2.0.1      crayon_1.4.1        readxl_1.3.1       
+[31] fs_1.5.0            fansi_0.4.1         nlme_3.1-148       
+[34] MASS_7.3-54         xml2_1.3.2          tools_4.0.2        
+[37] hms_1.1.0           lifecycle_1.0.0     munsell_0.5.0      
+[40] reprex_2.0.1        compiler_4.0.2      rlang_0.4.11       
+[43] grid_4.0.2          nloptr_1.2.2.2      rstudioapi_0.13    
+[46] CompQuadForm_1.4.3  boot_1.3-25         gtable_0.3.0       
+[49] codetools_0.2-16    DBI_1.1.0           R6_2.4.1           
+[52] lubridate_1.7.10    utf8_1.1.4          mathjaxr_1.4-0     
+[55] stringi_1.4.6       Rcpp_1.0.7          vctrs_0.3.8        
+[58] dbplyr_2.1.1        tidyselect_1.1.0   
+> save(out, sessionInfo, file = "RData/simulate_all.RData")
+> 
+> proc.time()
+      user     system    elapsed 
+901901.307   2097.029   9277.972 
