@@ -44,7 +44,7 @@ library(sn)
 #' \code{theta} (effect estimates) and
 #' \code{se} (standard errors).
 simRE <- function(k, sampleSize, effect, I2, dist=c("t", "Gaussian"),
-                  large = 0) {
+                  large) {
     stopifnot(length(k) == 1,
               length(sampleSize) == 1,
               is.numeric(effect),
@@ -144,7 +144,7 @@ pAccept <- function(theta, se, bias = c("moderate", "strong")){
 #' simREbias(4, sampleSize= 50, effect=.2, I2=.3, dist="Gaussian", large=2)
 #' simREbias(4, sampleSize= 50, effect=.2, I2=.3, dist="Gaussian", large=2, bias = "moderate")
 #' simREbias(4, sampleSize= 50, effect=.2, I2=.3, dist="Gaussian", large=1, bias = "strong")
-simREbias <- function(k, sampleSize, effect, I2, dist = c("t", "Gaussian"), large = 0,
+simREbias <- function(k, sampleSize, effect, I2, dist = c("t", "Gaussian"), large,
                       bias = c("none", "moderate", "strong"),
                       verbose = TRUE){
     stopifnot(!is.null(bias))
@@ -155,7 +155,7 @@ simREbias <- function(k, sampleSize, effect, I2, dist = c("t", "Gaussian"), larg
 
 
     ## first ignore the 'large' 
-    o <- simRE(k=k*3, sampleSize=sampleSize, effect=effect, I2=I2, dist=dist)
+    o <- simRE(k=k*3, sampleSize=sampleSize, effect=effect, I2=I2, dist=dist, large=0)
     pa <- pAccept(theta = o[,"theta"], se = o[,"se"], bias = bias)
     keep <- rbernoulli(n = k*3, p = pa)
     while(k > sum(keep)) {
@@ -200,7 +200,7 @@ sim2CIs <- function(x){
     HK <- metagen(TE = x[, "theta"], seTE = x[, "se"], sm = "MD", 
                   method.tau = "REML", hakn = TRUE)
 
-    ## HMeam2sided
+    ## HMean2sided
     if(nrow(x) <= 5) {
         HM2 <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
                             alternative = "two.sided")
@@ -316,7 +316,8 @@ sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time
         foreach(i = seq_len(N), .combine = rbind) %do% {
             res <- simREbias(k = pars$k, sampleSize = pars$sampleSize,
                              effect = pars$effect, I2 = pars$I2,
-                             dist = pars$dist, bias = pars$bias)
+                             dist = pars$dist, bias = pars$bias,
+                             large = pars$large)
             CIs <- sim2CIs(x = res)
             CI2measures(x = CIs, effect = pars$effect)
         } -> av
