@@ -190,15 +190,18 @@ simREbias <- function(k, sampleSize, effect, I2, dist = c("t", "Gaussian"), larg
 #' @return a tibble with columns \code{lower}, \code{upper}, and \code{method}.
 sim2CIs <- function(x){
     ## Henmy & Copas confidence Interval
-    HC <- metafor::hc(object = metafor::rma(yi = x[, "theta"], sei = x[, "se"]))
+    HC <- metafor::hc(object = metafor::rma(yi = x[, "theta"], sei = x[, "se"], 
+                                            control = list(maxiter = 1000, stepadj = 0.5)))
 
     ## standard metagen with REML estimation of tau
     REML <- metagen(TE = x[, "theta"], seTE = x[, "se"], sm = "MD", 
-                    method.tau = "REML")
+                    method.tau = "REML", 
+                    control = list(maxiter = 1000, stepadj = 0.5))
 
     ## Hartung & Knapp
     HK <- metagen(TE = x[, "theta"], seTE = x[, "se"], sm = "MD", 
-                  method.tau = "REML", hakn = TRUE)
+                  method.tau = "REML", hakn = TRUE,
+                  control = list(maxiter = 1000, stepadj = 0.5))
 
     ## HMean2sided
     if(nrow(x) <= 5) {
