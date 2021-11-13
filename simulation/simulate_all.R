@@ -208,7 +208,7 @@ sim2CIs <- function(x){
         HM2 <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
                             alternative = "two.sided")
     } else {
-        HM2 <- list(CI = cbind(lower = NA, upper = NA))
+        HM2 <- list(CI = cbind(lower = NA_real_, upper = NA_real_))
     }
 
     ## HMeanNone
@@ -309,7 +309,7 @@ CI2measures <- function(x, effect) {
 #' \item{value}{value of the measure}
 sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time())){
     stopifnot(is.data.frame(grid),
-              c("sampleSize", "I2", "k", "dist", "effect") %in% names(grid),
+              c("sampleSize", "I2", "k", "dist", "effect", "large") %in% names(grid),
               is.numeric(N), length(N) == 1, 1 <= N)
     registerDoParallel(cores)
     foreach(j = seq_len(nrow(grid)), .combine = rbind, .options.RNG=seed) %dorng% {
