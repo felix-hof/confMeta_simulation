@@ -27,17 +27,17 @@ plotPanels <- function(data,
             facet_wrap(~ method) +
             geom_point() +
             stat_summary(fun="mean", geom="line", aes(group=I2)) +
+            scale_color_discrete(name = expression(I^2)) +
             xlab("# studies") +
             ylab(measure) -> p        
     if(by == "I2")
-        data %>% mutate(I2 = paste("I2 =", I2)) %>%
+        data %>% mutate(I2 = as.character(I2)) %>%
         ggplot(mapping = aes(x = k, y = value, color = method)) +
-            facet_wrap(~ I2) +
+            facet_wrap(~ I2, labeller = label_bquote(I^2 == .(I2))) +
             geom_point() +
             stat_summary(fun="mean", geom="line", aes(group=method)) +
             xlab("# studies") +
-            ylab(measure) ->
-            p       
+            ylab(measure) -> p       
 
     if(str_detect(measure, "coverage")) {
         p <- p + 
@@ -85,7 +85,10 @@ for(i in 1:nrow(grid)){
                                  "_", grid[i, "dist"],
                                  "_large_", grid[i, "large"],
                                  "_bias_", grid[i, "bias"],
-                                 "_", grid[i, "measure"], ".png"))
+                                 "_", grid[i, "measure"], ".png"),
+               width = 7,
+               height = 6,
+               units = "in")
 }
 
 
