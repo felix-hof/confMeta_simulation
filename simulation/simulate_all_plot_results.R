@@ -19,7 +19,8 @@ plotPanels <- function(data,
         mutate(k = factor(k),
                I2 = factor(I2)) -> data
     if(measure == "n")
-        data <- data[data$method %in% c("Harmonic Mean"), ]
+        data <- data[data$method %in% c("Harmonic Mean", "Harmonic Mean Additive",
+                                        "Harmonic Mean Multiplicative"), ]
     if(by == "method")
         data %>% mutate(method = paste(method)) %>%
             ggplot(mapping = aes(x = k, y = value, color = I2)) +
