@@ -24,6 +24,7 @@ rm(list = ls())
 library(meta)
 source("ReplicationSuccess_extension.R")
 library(tidyverse); theme_set(theme_bw())
+library(rlang)
 library(doParallel)
 library(doRNG)
 library(RhpcBLASctl); blas_set_num_threads(1) # multi threading of BLAS
@@ -369,7 +370,8 @@ CI2measures <- function(x, theta, delta, effect) {
 #' \item{value}{value of the measure}
 sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time())){
     stopifnot(is.data.frame(grid),
-              c("sampleSize", "I2", "k", "dist", "effect", "large") %in% names(grid),
+              c("sampleSize", "I2", "k", "dist", 
+                "effect", "large", "heterogeneity", "bias") %in% names(grid),
               is.numeric(N), length(N) == 1, 1 <= N)
     registerDoParallel(cores)
     foreach(j = seq_len(nrow(grid)), .combine = rbind, .options.RNG=seed) %dorng% {
@@ -389,19 +391,17 @@ sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time
 
         ## compute the mean values of each measure
         av %>% group_by(method) %>%
-            summarize(width_mean = mean(width),
-                      coverage_mean = mean(coverage),
-                      score_mean = mean(score),
-                      n = mean(n),
+            summarize(across(everything(), mean, .names = "{.col}_mean"
                       ## width_sd = sd(width),
                       ## coverage_sd = sd(coverage),
                       ## score_sd = sd(score)
-                      ) %>%
-            gather(key = "measure", value = "value", width_mean, coverage_mean,
-                   score_mean, n
+                      )) %>%
+            pivot_longer(cols = ends_with("mean"),
+                         names_to = "measure",
+                         values_to = "value"
                    ## width_sd, coverage_sd, score_sd
                    ) %>%
-            cbind(grid %>% slice(j), .) -> out
+            cbind(pars, .) -> out
         out
     } -> o
     attr(o, "seed") <- seed
