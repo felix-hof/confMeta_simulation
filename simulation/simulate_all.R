@@ -24,6 +24,7 @@ rm(list = ls())
 library(meta)
 source("ReplicationSuccess_extension.R")
 library(tidyverse); theme_set(theme_bw())
+library(rlang)
 library(doParallel)
 library(doRNG)
 library(RhpcBLASctl); blas_set_num_threads(1) # multi threading of BLAS
@@ -38,51 +39,67 @@ library(sn)
 #' @param sampleSize sample size of the trial
 #' @param effect effect size
 #' @param I2 Higgin's I^2 heterogeneity measure
+#' @param heterogeneity The heterogeneity model, the studies are simulated from.
+#' Either "additive" or "multiplicative".
 #' @param dist distribution to simulate the study effect. Either "t" or "Gaussian".
 #' the sample size as specified by \code{sampleSize}.
 #' @return a matrix \code{k} x 2 matrix with columns
 #' \code{theta} (effect estimates) and
 #' \code{se} (standard errors).
-simRE <- function(k, sampleSize, effect, I2, dist=c("t", "Gaussian"),
-                  large = 0) {
-    stopifnot(length(k) == 1,
-              length(sampleSize) == 1,
-              is.numeric(effect),
-              length(effect) == 1,
-              is.finite(effect),
-              length(I2) == 1,
-              0 <= I2, I2 < 1,
-              !is.null(dist),
-              !is.null(large),
-              is.numeric(large),
-              length(large)==1,
-              large %in% c(0,1,2))
+simRE <- function(k, sampleSize, effect, I2, 
+                  heterogeneity = c("additive", "multiplicative"),
+                  dist=c("t", "Gaussian"),
+                  large) {
+    
+    # get args
     dist <- match.arg(dist)
     n <- rep(sampleSize, k)
+    heterogeneity <- match.arg(heterogeneity)
+    # include large studies
     if(large == 1)
         n[1] <- 10 * n[1]
     if(large == 2)
         n[1:2] <- 10 * n[1:2]
-    eps2 <- 1/k * sum(2/n)
-    tau2 <- eps2 * I2/(1 - I2)
-    if(dist == "t") {
-        ## the sn::rst(xi=0, omega, nu) distribution has variance
-        ## omega^2 nu/(nu-2) (if nu>2)
-        ## where nu is the degrefees of freedom (dof).
-        ## So if we want the variance to be tau^2, then 
-        ## omega^2 = tau^2 * (nu-2)/nu
-        ## We use nu=4 dof then omega^2 = tau^2/2, so half as
-        ## large as the heterogeneity variance under normality. 
-        delta <- rst(n=k, xi = effect, omega = sqrt(tau2/2), nu = 4)
+    # stuff for additive model
+    if(heterogeneity == "additive"){
+        eps2 <- 1/k * sum(2/n)
+        tau2 <- eps2 * I2/(1 - I2)
+        if(dist == "t") {
+            ## the sn::rst(xi=0, omega, nu) distribution has variance
+            ## omega^2 nu/(nu-2) (if nu>2)
+            ## where nu is the degrefees of freedom (dof).
+            ## So if we want the variance to be tau^2, then 
+            ## omega^2 = tau^2 * (nu-2)/nu
+            ## We use nu=4 dof then omega^2 = tau^2/2, so half as
+            ## large as the heterogeneity variance under normality. 
+            delta <- rst(n=k, xi = effect, omega = sqrt(tau2/2), nu = 4)
+        } else {
+            delta <- rnorm(n = k, mean = effect, sd = sqrt(tau2))
+        }
+        theta <- rnorm(n = k, mean = delta, sd = sqrt(2/n))
+        ## theta[1:ceiling(r*k)] <- theta[1:ceiling(r*k)] + bias
+        se <- sqrt(rchisq(n = k, df = 2*n - 2) / (n*(n - 1)))
+        o <- cbind("theta" = theta, "se" = se, "delta" = delta)
     } else {
-        delta <- rnorm(n = k, mean = effect, sd = sqrt(tau2))
+        phi <- 1/(1 - I2)
+        if(dist == "t") {
+            ## the sn::rst(xi=0, omega, nu) distribution has variance
+            ## omega^2 nu/(nu-2) (if nu>2)
+            ## where nu is the degrees of freedom (dof).
+            ## So if we want the variance to be tau^2, then 
+            ## omega^2 = tau^2 * (nu-2)/nu
+            ## We use nu=4 dof then omega^2 = tau^2/2, so half as
+            ## large as the heterogeneity variance under normality. 
+            theta <- rst(n = k, xi = effect, omega = sqrt(phi/n), nu = 4)
+        } else {
+            theta <- rnorm(n = k, mean = effect, sd = sqrt(phi*2/n))
+        }
+        ## theta[1:ceiling(r*k)] <- theta[1:ceiling(r*k)] + bias
+        se <- sqrt(rchisq(n = k, df = 2*n - 2) / (n*(n - 1)))
+        o <- cbind("theta" = theta, "se" = se, "delta" = NA_real_)
     }
-    theta <- rnorm(n = k, mean = delta, sd = sqrt(2/n))
-    ## theta[1:ceiling(r*k)] <- theta[1:ceiling(r*k)] + bias
-    se <- sqrt(rchisq(n = k, df = 2*n - 2) / (n*(n - 1)))
-    o <- cbind("theta" = theta, "se" = se, "delta" = delta)
     rownames(o) <- NULL
-    o
+    return(o)
 }
 
 
@@ -128,6 +145,8 @@ pAccept <- function(theta, se, bias = c("moderate", "strong")){
 #' @param sampleSize sample size of the trial
 #' @param effect effect size
 #' @param I2 Higgin's I^2 heterogeneity measure
+#' #' @param heterogeneity The heterogeneity model, the studies are simulated from.
+#' Either "additive" or "multiplicative".
 #' @param dist distribution to simulate the study effect. Either "t" or "Gaussian".
 #' @param large A number in \code{c(0,1,2)} indicating the number of studies that have ten times
 #' the sample size as specified by \code{sampleSize}. Publication bias is only applied to the smaller
@@ -146,18 +165,37 @@ pAccept <- function(theta, se, bias = c("moderate", "strong")){
 #' simREbias(4, sampleSize= 50, effect=.2, I2=.3, dist="Gaussian", large=2)
 #' simREbias(4, sampleSize= 50, effect=.2, I2=.3, dist="Gaussian", large=2, bias = "moderate")
 #' simREbias(4, sampleSize= 50, effect=.2, I2=.3, dist="Gaussian", large=1, bias = "strong")
-simREbias <- function(k, sampleSize, effect, I2, dist = c("t", "Gaussian"), large = 0,
+simREbias <- function(k, sampleSize, effect, I2,
+                      heterogeneity = c("additive", "multiplicative"),
+                      dist = c("t", "Gaussian"), 
+                      large,
                       bias = c("none", "moderate", "strong"),
                       verbose = TRUE){
-    stopifnot(!is.null(bias))
+    # input checks
+    stopifnot(length(k) == 1,
+              length(sampleSize) == 1,
+              is.numeric(effect),
+              length(effect) == 1,
+              is.finite(effect),
+              length(I2) == 1,
+              0 <= I2, I2 < 1,
+              !is.null(dist),
+              !is.null(large),
+              is.numeric(large),
+              length(large)==1,
+              large %in% c(0,1,2),
+              !is.null(bias))
+    
     bias <- match.arg(bias)
 
-    if(bias == "none")
-        return(simRE(k=k, sampleSize=sampleSize, effect = effect, I2=I2, dist=dist, large=large))
-
-
+    if(bias == "none"){
+        o <- simRE(k=k, sampleSize=sampleSize, effect = effect, I2=I2, heterogeneity=heterogeneity, dist=dist, large=large)
+        attr(o, "heterogeneity") <- heterogeneity
+        return(o)
+    }
+        
     ## first ignore the 'large' 
-    o <- simRE(k=k*3, sampleSize=sampleSize, effect=effect, I2=I2, dist=dist)
+    o <- simRE(k=k*3, sampleSize=sampleSize, effect=effect, I2=I2, heterogeneity=heterogeneity, dist=dist, large=0)
     pa <- pAccept(theta = o[,"theta"], se = o[,"se"], bias = bias)
     keep <- rbernoulli(n = k*3, p = pa)
     while(k > sum(keep)) {
@@ -173,14 +211,15 @@ simREbias <- function(k, sampleSize, effect, I2, dist = c("t", "Gaussian"), larg
 
     ## add large studies
     if(large == 1){
-        oLarge <- simRE(k=k, sampleSize=sampleSize, effect = effect, I2=I2, dist=dist, large=large)
+        oLarge <- simRE(k=k, sampleSize=sampleSize, effect = effect, I2=I2, heterogeneity=heterogeneity, dist=dist, large=large)
         o <- rbind(oLarge[1,], o[-1,]) 
     }
     if(large == 2){
-        oLarge <- simRE(k=k, sampleSize=sampleSize, effect = effect, I2=I2, dist=dist, large=large)
+        oLarge <- simRE(k=k, sampleSize=sampleSize, effect = effect, I2=I2, heterogeneity=heterogeneity, dist=dist, large=large)
         o <- rbind(oLarge[1:2,], o[-c(1,2),]) 
     }
-    o    
+    attr(o, which = "heterogeneity") <- heterogeneity
+    o
 }
 
 
@@ -192,22 +231,25 @@ simREbias <- function(k, sampleSize, effect, I2, dist = c("t", "Gaussian"), larg
 #' @return a tibble with columns \code{lower}, \code{upper}, and \code{method}.
 sim2CIs <- function(x){
     ## Henmy & Copas confidence Interval
-    HC <- metafor::hc(object = metafor::rma(yi = x[, "theta"], sei = x[, "se"]))
+    HC <- metafor::hc(object = metafor::rma(yi = x[, "theta"], sei = x[, "se"], 
+                                            control = list(maxiter = 1000, stepadj = 0.5)))
 
     ## standard metagen with REML estimation of tau
     REML <- metagen(TE = x[, "theta"], seTE = x[, "se"], sm = "MD", 
-                    method.tau = "REML")
+                    method.tau = "REML", 
+                    control = list(maxiter = 1000, stepadj = 0.5))
 
     ## Hartung & Knapp
     HK <- metagen(TE = x[, "theta"], seTE = x[, "se"], sm = "MD", 
-                  method.tau = "REML", hakn = TRUE)
+                  method.tau = "REML", hakn = TRUE,
+                  control = list(maxiter = 1000, stepadj = 0.5))
 
-    ## HMeam2sided
+    ## HMean2sided
     if(nrow(x) <= 5) {
         HM2 <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
                             alternative = "two.sided")
     } else {
-        HM2 <- list(CI = cbind(lower = NA, upper = NA))
+        HM2 <- list(CI = cbind(lower = NA_real_, upper = NA_real_))
     }
 
     ## HMeanNone
@@ -219,47 +261,48 @@ sim2CIs <- function(x){
                            tau2 = REML$tau2, alternative = "none")
 
     ## HMeanNone_phi
-    HM_phi <- hMeanChiSqPhiCI(thetahat = x[, "theta"], se = x[, "se"], 
+    HM_phi <- hMeanChiSqCIphi(thetahat = x[, "theta"], se = x[, "se"], 
                                alternative = "none")
 
-    tibble(lower = c(HC$ci.lb,
-                     REML$lower.random,
-                     HK$lower.random,
-                     HM2$CI[,"lower"], 
-                     HM$CI[,"lower"],
-                     HM_tau2$CI[,"lower"],
-                     HM_phi$CI[,"lower"]),
-           upper = c(HC$ci.ub,
-                     REML$upper.random,
-                     HK$upper.random,
-                     HM2$CI[,"upper"], 
-                     HM$CI[,"upper"],
-                     HM_tau2$CI[,"upper"],
-                     HM_phi$CI[,"upper"]),
-           method = c("Henmy & Copas",
-                      "REML",
-                      "Hartung & Knapp",
-                      "Harmonic Mean two sided",
-                      rep("Harmonic Mean", nrow(HM$CI)),
-                      rep("Harmonic Mean Additive", nrow(HM_tau2$CI)),
-                      rep("Harmonic Mean Multiplicative", nrow(HM_phi$CI))))
+    out <- tibble(lower = c(HC$ci.lb,
+                            REML$lower.random,
+                            HK$lower.random,
+                            HM2$CI[,"lower"], 
+                            HM$CI[,"lower"],
+                            HM_tau2$CI[,"lower"],
+                            HM_phi$CI[,"lower"]),
+                  upper = c(HC$ci.ub,
+                            REML$upper.random,
+                            HK$upper.random,
+                            HM2$CI[,"upper"], 
+                            HM$CI[,"upper"],
+                            HM_tau2$CI[,"upper"],
+                            HM_phi$CI[,"upper"]),
+                  method = c("Henmy & Copas",
+                             "REML",
+                             "Hartung & Knapp",
+                             "Harmonic Mean two sided",
+                             rep("Harmonic Mean", nrow(HM$CI)),
+                             rep("Harmonic Mean Additive", nrow(HM_tau2$CI)),
+                             rep("Harmonic Mean Multiplicative", nrow(HM_phi$CI))))
+    attr(out, "heterogeneity") <- attributes(x)$heterogeneity
+    out
 }
 
 
 
 #' Computes quality measures for CIs
 #'
-#' @param x a tibble with columns \code{lower}, \code{upper}, and \code{method}
-#' as obtained from \code{sim2CIs}.
-#' @param theta simulates effect estimates of the study.
-#' @param delta simulates effects of the study.
+#' @param x a tibble with columns \code{lower}, \code{upper}, and \code{method}.
+#' as obtained from \code{sim2CIs}
+#' @param theta simulated effect estimates of the study.
+#' @param delta simulated effects of the study under the additive heterogeneity model.
 #' @param effect effect size.
 #' @return a tibble with columns 
 #' \item{\code{method}}{method}
 #' \item{\code{width}}{with of the intervals}
 #' \item{\code{coverage}}{covarage of the true value 0}
 #' \item{\code{score}}{interval score as defined in Gneiting and Raftery (2007)}
-#' \item{\code{coverage_effects}}{Proportion of study effects covered by the interval(s).}
 #' \item{\code{n}}{Number of intervals}
 CI2measures <- function(x, theta, delta, effect) {
     methods <- unique(x$method)
@@ -268,24 +311,39 @@ CI2measures <- function(x, theta, delta, effect) {
             select(lower, upper) %>%
             as.matrix() ->
             x_sub
-
-        sapply(theta, function(theta){
-            any(x_sub[,"lower"] <= delta & delta <= x_sub[,"upper"])
-        }) %>%
-            mean() ->
-            coverage_effects
+        
+        if(attributes(x)$heterogeneity == "additive"){
+            sapply(theta, function(theta){
+                any(x_sub[,"lower"] <= delta & delta <= x_sub[,"upper"])
+            }) %>%
+                mean() ->
+                coverage_effects
+        }
 
         { x_sub[,"upper"] - x_sub[,"lower"] } %>%
             sum(.) ->
             width
+        
         as.numeric(any(x_sub[,"lower"] <= effect & effect <= x_sub[,"upper"])) ->
             coverage
+        
         width + (2/0.05) * min(abs(x_sub[,"lower"]), abs(x_sub[,"upper"])) * (1 - coverage) ->
             score
-        tibble(method = methods[i], width = width, coverage = coverage, score = score,
-               coverage_effects = coverage_effects, n = nrow(x_sub))
+        
+        if(attributes(x)$heterogeneity == "additive"){
+            out <- tibble(method = methods[i], width = width, coverage = coverage, score = score,
+                          coverage_effects = coverage_effects, n = nrow(x_sub))
+            
+        } else if(attributes(x)$heterogeneity == "multiplicative"){
+            out <- tibble(method = methods[i], width = width, coverage = coverage, score = score,
+                          n = nrow(x_sub))
+        }
+        
+        out
     }
 }
+
+
 
 
 
@@ -312,7 +370,8 @@ CI2measures <- function(x, theta, delta, effect) {
 #' \item{value}{value of the measure}
 sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time())){
     stopifnot(is.data.frame(grid),
-              c("sampleSize", "I2", "k", "dist", "effect") %in% names(grid),
+              c("sampleSize", "I2", "k", "dist", 
+                "effect", "large", "heterogeneity", "bias") %in% names(grid),
               is.numeric(N), length(N) == 1, 1 <= N)
     registerDoParallel(cores)
     foreach(j = seq_len(nrow(grid)), .combine = rbind, .options.RNG=seed) %dorng% {
@@ -322,7 +381,9 @@ sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time
         foreach(i = seq_len(N), .combine = rbind) %do% {
             res <- simREbias(k = pars$k, sampleSize = pars$sampleSize,
                              effect = pars$effect, I2 = pars$I2,
-                             dist = pars$dist, bias = pars$bias)
+                             heterogeneity = pars$heterogeneity,
+                             dist = pars$dist, bias = pars$bias,
+                             large = pars$large)
             CIs <- sim2CIs(x = res)
             CI2measures(x = CIs, theta = res[,"theta"], delta = res[,"delta"],
                         effect = pars$effect)
@@ -330,20 +391,17 @@ sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time
 
         ## compute the mean values of each measure
         av %>% group_by(method) %>%
-            summarize(width_mean = mean(width),
-                      coverage_mean = mean(coverage),
-                      coverage_effects_mean = mean(coverage_effects),
-                      score_mean = mean(score),
-                      n = mean(n),
+            summarize(across(everything(), mean, .names = "{.col}_mean"
                       ## width_sd = sd(width),
                       ## coverage_sd = sd(coverage),
                       ## score_sd = sd(score)
-                      ) %>%
-            gather(key = "measure", value = "value", width_mean, coverage_mean,
-                   coverage_effects_mean, score_mean, n,
+                      )) %>%
+            pivot_longer(cols = ends_with("mean"),
+                         names_to = "measure",
+                         values_to = "value"
                    ## width_sd, coverage_sd, score_sd
                    ) %>%
-            cbind(grid %>% slice(j), .) -> out
+            cbind(pars, .) -> out
         out
     } -> o
     attr(o, "seed") <- seed
@@ -355,13 +413,14 @@ sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time
 
 
 ## set parameter grid to be evaluated 
-grid <- expand.grid(sampleSize = 50,                  # sample size of trial
-                    effect = 0.2,                     # average effect, impacts selection bias
-                    I2 = c(0, 0.3, 0.6, 0.9),         # Higgin's I^2 heterogeneity measure
-                    k = c(2, 3, 5, 10, 20),           # number of studies
-                    dist = c("Gaussian", "t"),        # distribution 
-                    bias = c("none", "moderate", "strong"),
-                    large = c(0, 1, 2),
+grid <- expand.grid(sampleSize = 50,                                 # sample size of trial
+                    effect = 0.2,                                    # average effect, impacts selection bias
+                    I2 = c(0, 0.3, 0.6, 0.9),                        # Higgin's I^2 heterogeneity measure
+                    k = c(2, 3, 5, 10, 20),                          # number of studies
+                    heterogeneity = c("additive", "multiplicative"), # The heterogeneity model that the studies are simulated from
+                    dist = c("Gaussian", "t"),                       # distribution 
+                    bias = c("none", "moderate", "strong"),          # bias
+                    large = c(0, 1, 2),                              # number of large studies
                     stringsAsFactors = FALSE)        
 
 

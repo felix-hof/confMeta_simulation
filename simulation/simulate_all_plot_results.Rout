@@ -1,450 +1,225 @@
-
-R version 4.1.1 (2021-08-10) -- "Kick Things"
-Copyright (C) 2021 The R Foundation for Statistical Computing
-Platform: x86_64-pc-linux-gnu (64-bit)
-
-R is free software and comes with ABSOLUTELY NO WARRANTY.
-You are welcome to redistribute it under certain conditions.
-Type 'license()' or 'licence()' for distribution details.
-
-  Natural language support but running in an English locale
-
-R is a collaborative project with many contributors.
-Type 'contributors()' for more information and
-'citation()' on how to cite R or R packages in publications.
-
-Type 'demo()' for some demos, 'help()' for on-line help, or
-'help.start()' for an HTML browser interface to help.
-Type 'q()' to quit R.
-
-> ## create figures from simulation output
-> 
-> rm(list = ls())
-> library(tidyverse); theme_set(theme_bw())
 ── Attaching packages ─────────────────────────────────────── tidyverse 1.3.1 ──
 ✔ ggplot2 3.3.5     ✔ purrr   0.3.4
-✔ tibble  3.1.3     ✔ dplyr   1.0.7
-✔ tidyr   1.1.3     ✔ stringr 1.4.0
-✔ readr   2.0.1     ✔ forcats 0.5.1
+✔ tibble  3.1.5     ✔ dplyr   1.0.7
+✔ tidyr   1.1.4     ✔ stringr 1.4.0
+✔ readr   2.0.2     ✔ forcats 0.5.1
 ── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
 ✖ dplyr::filter() masks stats::filter()
 ✖ dplyr::lag()    masks stats::lag()
-> 
-> load(paste0("RData/simulate_all.RData"))
-> 
-> #' Helper function to plot the results
-> #' @param data obtained by simulate.R and saved in RData/simulate1.RData
-> #' @param measure CI measure to plot
-> #' @param by make facets based on "method" or "I2".
-> plotPanels <- function(data,
-+                        measure = c("width", "coverage", "coverage_effects",
-+                                    "score", "n"),
-+                        by = c("method", "I2")){
-+     measure <- match.arg(measure)
-+     by <- match.arg(by)
-+     data[data$measure == measure, ] %>%
-+         mutate(k = factor(k),
-+                I2 = factor(I2)) -> data
-+     if(measure == "n")
-+         data <- data[data$method %in% c("Harmonic Mean"), ]
-+     if(by == "method")
-+         data %>% mutate(method = paste(method)) %>%
-+             ggplot(mapping = aes(x = k, y = value, color = I2)) +
-+             facet_wrap(~ method) +
-+             geom_point() +
-+             stat_summary(fun="mean", geom="line", aes(group=I2)) +
-+             xlab("# studies") +
-+             ylab(measure) -> p        
-+     if(by == "I2")
-+         data %>% mutate(I2 = paste("I2 =", I2)) %>%
-+         ggplot(mapping = aes(x = k, y = value, color = method)) +
-+             facet_wrap(~ I2) +
-+             geom_point() +
-+             stat_summary(fun="mean", geom="line", aes(group=method)) +
-+             xlab("# studies") +
-+             ylab(measure) ->
-+             p       
-+ 
-+     if(str_detect(measure, "coverage")) {
-+         p <- p + 
-+             geom_hline(yintercept = 0.95, lty = 2, alpha = 0.5)
-+     }
-+     p
-+ }
-> 
-> ## sim %>% 
-> ##     filter(measure == "coverage_new_mean") %>%
-> ##     arrange(method)
-> 
-> 
-> 
-> 
-> ## 4.1
-> dir.create("figs", showWarnings = FALSE)
-> out %>%
-+     filter(method != "Harmonic Mean two sided") %>%
-+     mutate(method = ifelse(method == "REML", "Random Effects, default, REML", method),
-+            measure = gsub("_mean", "", measure))-> out2
-> 
-> out2 %>% select(measure) %>% unique() %>% pull() -> measure
-> out2 %>% select(dist) %>% unique() %>% pull() -> dist 
-> out2 %>% select(bias) %>% unique() %>% pull() -> bias 
-> out2 %>% select(large) %>% unique() %>% pull() -> large 
-> 
-> grid <- expand.grid(measure = measure, dist = dist, bias = bias, large = large,
-+                     stringsAsFactors = FALSE)
-> 
-> 
-> 
-> 
-> for(i in 1:nrow(grid)){
-+         print(grid[i,])
-+         out2[out2$dist == grid[i, "dist"] &
-+              out2$measure == grid[i, "measure"] &
-+              out2$bias == grid[i, "bias"]&
-+              out2$large == grid[i, "large"], ] %>%
-+             plotPanels(data=., measure = grid[i, "measure"], by="method") +
-+             ggtitle(paste0("dist: ", grid[i, "dist"],
-+                            ", bias: ", grid[i, "bias"],
-+                            ", theta: 0.2, no. of large studies: ", grid[i, "large"], sep=""))
-+         ggsave(filename = paste0("figs/simulate_all",
-+                                  "_", grid[i, "dist"],
-+                                  "_large_", grid[i, "large"],
-+                                  "_bias_", grid[i, "bias"],
-+                                  "_", grid[i, "measure"], ".png"))
-+ }
   measure     dist bias large
 1   width Gaussian none     0
 Saving 7 x 7 in image
    measure     dist bias large
 2 coverage Gaussian none     0
 Saving 7 x 7 in image
-           measure     dist bias large
-3 coverage_effects Gaussian none     0
+  measure     dist bias large
+3   score Gaussian none     0
 Saving 7 x 7 in image
   measure     dist bias large
-4   score Gaussian none     0
-Saving 7 x 7 in image
-  measure     dist bias large
-5       n Gaussian none     0
+4       n Gaussian none     0
 Saving 7 x 7 in image
   measure dist bias large
-6   width    t none     0
+5   width    t none     0
 Saving 7 x 7 in image
    measure dist bias large
-7 coverage    t none     0
-Saving 7 x 7 in image
-           measure dist bias large
-8 coverage_effects    t none     0
+6 coverage    t none     0
 Saving 7 x 7 in image
   measure dist bias large
-9   score    t none     0
+7   score    t none     0
 Saving 7 x 7 in image
-   measure dist bias large
-10       n    t none     0
+  measure dist bias large
+8       n    t none     0
 Saving 7 x 7 in image
-   measure     dist     bias large
-11   width Gaussian moderate     0
+  measure     dist     bias large
+9   width Gaussian moderate     0
 Saving 7 x 7 in image
     measure     dist     bias large
-12 coverage Gaussian moderate     0
-Saving 7 x 7 in image
-            measure     dist     bias large
-13 coverage_effects Gaussian moderate     0
+10 coverage Gaussian moderate     0
 Saving 7 x 7 in image
    measure     dist     bias large
-14   score Gaussian moderate     0
+11   score Gaussian moderate     0
 Saving 7 x 7 in image
    measure     dist     bias large
-15       n Gaussian moderate     0
+12       n Gaussian moderate     0
 Saving 7 x 7 in image
    measure dist     bias large
-16   width    t moderate     0
+13   width    t moderate     0
 Saving 7 x 7 in image
     measure dist     bias large
-17 coverage    t moderate     0
-Saving 7 x 7 in image
-            measure dist     bias large
-18 coverage_effects    t moderate     0
+14 coverage    t moderate     0
 Saving 7 x 7 in image
    measure dist     bias large
-19   score    t moderate     0
+15   score    t moderate     0
 Saving 7 x 7 in image
    measure dist     bias large
-20       n    t moderate     0
+16       n    t moderate     0
 Saving 7 x 7 in image
    measure     dist   bias large
-21   width Gaussian strong     0
+17   width Gaussian strong     0
 Saving 7 x 7 in image
     measure     dist   bias large
-22 coverage Gaussian strong     0
-Saving 7 x 7 in image
-            measure     dist   bias large
-23 coverage_effects Gaussian strong     0
+18 coverage Gaussian strong     0
 Saving 7 x 7 in image
    measure     dist   bias large
-24   score Gaussian strong     0
+19   score Gaussian strong     0
 Saving 7 x 7 in image
    measure     dist   bias large
-25       n Gaussian strong     0
+20       n Gaussian strong     0
 Saving 7 x 7 in image
    measure dist   bias large
-26   width    t strong     0
+21   width    t strong     0
 Saving 7 x 7 in image
     measure dist   bias large
-27 coverage    t strong     0
-Saving 7 x 7 in image
-            measure dist   bias large
-28 coverage_effects    t strong     0
+22 coverage    t strong     0
 Saving 7 x 7 in image
    measure dist   bias large
-29   score    t strong     0
+23   score    t strong     0
 Saving 7 x 7 in image
    measure dist   bias large
-30       n    t strong     0
+24       n    t strong     0
 Saving 7 x 7 in image
    measure     dist bias large
-31   width Gaussian none     1
+25   width Gaussian none     1
 Saving 7 x 7 in image
     measure     dist bias large
-32 coverage Gaussian none     1
-Saving 7 x 7 in image
-            measure     dist bias large
-33 coverage_effects Gaussian none     1
+26 coverage Gaussian none     1
 Saving 7 x 7 in image
    measure     dist bias large
-34   score Gaussian none     1
+27   score Gaussian none     1
 Saving 7 x 7 in image
    measure     dist bias large
-35       n Gaussian none     1
+28       n Gaussian none     1
 Saving 7 x 7 in image
    measure dist bias large
-36   width    t none     1
+29   width    t none     1
 Saving 7 x 7 in image
     measure dist bias large
-37 coverage    t none     1
-Saving 7 x 7 in image
-            measure dist bias large
-38 coverage_effects    t none     1
+30 coverage    t none     1
 Saving 7 x 7 in image
    measure dist bias large
-39   score    t none     1
+31   score    t none     1
 Saving 7 x 7 in image
    measure dist bias large
-40       n    t none     1
+32       n    t none     1
 Saving 7 x 7 in image
    measure     dist     bias large
-41   width Gaussian moderate     1
+33   width Gaussian moderate     1
 Saving 7 x 7 in image
     measure     dist     bias large
-42 coverage Gaussian moderate     1
-Saving 7 x 7 in image
-            measure     dist     bias large
-43 coverage_effects Gaussian moderate     1
+34 coverage Gaussian moderate     1
 Saving 7 x 7 in image
    measure     dist     bias large
-44   score Gaussian moderate     1
+35   score Gaussian moderate     1
 Saving 7 x 7 in image
    measure     dist     bias large
-45       n Gaussian moderate     1
+36       n Gaussian moderate     1
 Saving 7 x 7 in image
    measure dist     bias large
-46   width    t moderate     1
+37   width    t moderate     1
 Saving 7 x 7 in image
     measure dist     bias large
-47 coverage    t moderate     1
-Saving 7 x 7 in image
-            measure dist     bias large
-48 coverage_effects    t moderate     1
+38 coverage    t moderate     1
 Saving 7 x 7 in image
    measure dist     bias large
-49   score    t moderate     1
+39   score    t moderate     1
 Saving 7 x 7 in image
    measure dist     bias large
-50       n    t moderate     1
+40       n    t moderate     1
 Saving 7 x 7 in image
    measure     dist   bias large
-51   width Gaussian strong     1
+41   width Gaussian strong     1
 Saving 7 x 7 in image
     measure     dist   bias large
-52 coverage Gaussian strong     1
-Saving 7 x 7 in image
-            measure     dist   bias large
-53 coverage_effects Gaussian strong     1
+42 coverage Gaussian strong     1
 Saving 7 x 7 in image
    measure     dist   bias large
-54   score Gaussian strong     1
+43   score Gaussian strong     1
 Saving 7 x 7 in image
    measure     dist   bias large
-55       n Gaussian strong     1
+44       n Gaussian strong     1
 Saving 7 x 7 in image
    measure dist   bias large
-56   width    t strong     1
+45   width    t strong     1
 Saving 7 x 7 in image
     measure dist   bias large
-57 coverage    t strong     1
-Saving 7 x 7 in image
-            measure dist   bias large
-58 coverage_effects    t strong     1
+46 coverage    t strong     1
 Saving 7 x 7 in image
    measure dist   bias large
-59   score    t strong     1
+47   score    t strong     1
 Saving 7 x 7 in image
    measure dist   bias large
-60       n    t strong     1
+48       n    t strong     1
 Saving 7 x 7 in image
    measure     dist bias large
-61   width Gaussian none     2
+49   width Gaussian none     2
 Saving 7 x 7 in image
     measure     dist bias large
-62 coverage Gaussian none     2
-Saving 7 x 7 in image
-            measure     dist bias large
-63 coverage_effects Gaussian none     2
+50 coverage Gaussian none     2
 Saving 7 x 7 in image
    measure     dist bias large
-64   score Gaussian none     2
+51   score Gaussian none     2
 Saving 7 x 7 in image
    measure     dist bias large
-65       n Gaussian none     2
+52       n Gaussian none     2
 Saving 7 x 7 in image
    measure dist bias large
-66   width    t none     2
+53   width    t none     2
 Saving 7 x 7 in image
     measure dist bias large
-67 coverage    t none     2
-Saving 7 x 7 in image
-            measure dist bias large
-68 coverage_effects    t none     2
+54 coverage    t none     2
 Saving 7 x 7 in image
    measure dist bias large
-69   score    t none     2
+55   score    t none     2
 Saving 7 x 7 in image
    measure dist bias large
-70       n    t none     2
+56       n    t none     2
 Saving 7 x 7 in image
    measure     dist     bias large
-71   width Gaussian moderate     2
+57   width Gaussian moderate     2
 Saving 7 x 7 in image
     measure     dist     bias large
-72 coverage Gaussian moderate     2
-Saving 7 x 7 in image
-            measure     dist     bias large
-73 coverage_effects Gaussian moderate     2
+58 coverage Gaussian moderate     2
 Saving 7 x 7 in image
    measure     dist     bias large
-74   score Gaussian moderate     2
+59   score Gaussian moderate     2
 Saving 7 x 7 in image
    measure     dist     bias large
-75       n Gaussian moderate     2
+60       n Gaussian moderate     2
 Saving 7 x 7 in image
    measure dist     bias large
-76   width    t moderate     2
+61   width    t moderate     2
 Saving 7 x 7 in image
     measure dist     bias large
-77 coverage    t moderate     2
-Saving 7 x 7 in image
-            measure dist     bias large
-78 coverage_effects    t moderate     2
+62 coverage    t moderate     2
 Saving 7 x 7 in image
    measure dist     bias large
-79   score    t moderate     2
+63   score    t moderate     2
 Saving 7 x 7 in image
    measure dist     bias large
-80       n    t moderate     2
+64       n    t moderate     2
 Saving 7 x 7 in image
    measure     dist   bias large
-81   width Gaussian strong     2
+65   width Gaussian strong     2
 Saving 7 x 7 in image
     measure     dist   bias large
-82 coverage Gaussian strong     2
-Saving 7 x 7 in image
-            measure     dist   bias large
-83 coverage_effects Gaussian strong     2
+66 coverage Gaussian strong     2
 Saving 7 x 7 in image
    measure     dist   bias large
-84   score Gaussian strong     2
+67   score Gaussian strong     2
 Saving 7 x 7 in image
    measure     dist   bias large
-85       n Gaussian strong     2
+68       n Gaussian strong     2
 Saving 7 x 7 in image
    measure dist   bias large
-86   width    t strong     2
+69   width    t strong     2
 Saving 7 x 7 in image
     measure dist   bias large
-87 coverage    t strong     2
-Saving 7 x 7 in image
-            measure dist   bias large
-88 coverage_effects    t strong     2
+70 coverage    t strong     2
 Saving 7 x 7 in image
    measure dist   bias large
-89   score    t strong     2
+71   score    t strong     2
 Saving 7 x 7 in image
    measure dist   bias large
-90       n    t strong     2
+72       n    t strong     2
 Saving 7 x 7 in image
-> 
-> 
-> ## make summary pannels
-> ## needs convert from ImageMagick-ims6.q16(1) available for Linux Ubuntu and other systems
-> ## 1. bias none vs strong
-> for(di in dist)
-+     for(la in large)
-+         for(me in measure)
-+             system(paste0("convert ",
-+                           "figs/simulate_all",
-+                           "_", di,
-+                           "_large_", la,
-+                           "_bias_none",
-+                           "_", me, ".png",
-+                           " ",
-+                           "figs/simulate_all",
-+                           "_", di,
-+                           "_large_", la,
-+                           "_bias_moderate",
-+                           "_", me, ".png",
-+                           " ",
-+                           "figs/simulate_all",
-+                           "_", di,
-+                            "_large_", la,
-+                           "_bias_strong",
-+                           "_", me, ".png",
-+                           " +append ",
-+                            "figs/simulate_all_summary_panel_BIAS",
-+                           "_", di,
-+                           "_large_", la,
-+                           "_", me, ".png"))
-> 
-> ## 2. no large trials 0, 1, 2
-> for(di in dist)
-+     for(bi in bias)
-+         for(me in measure)
-+             system(paste0("convert ",
-+                           "figs/simulate_all",
-+                           "_", di,
-+                           "_large_0",
-+                           "_bias_", bi, 
-+                           "_", me, ".png",
-+                           " ",
-+                           "figs/simulate_all",
-+                           "_", di,
-+                           "_large_1",
-+                           "_bias_", bi, 
-+                           "_", me, ".png",
-+                           " ",
-+                           "figs/simulate_all",
-+                           "_", di,
-+                           "_large_2",
-+                           "_bias_", bi, 
-+                           "_", me, ".png",
-+                           " ",
-+                           " +append ",
-+                           "figs/simulate_all_summary_panel_TRIAL_SIZE",
-+                           "_", di,
-+                           "_bias_", bi,
-+                           "_", me, ".png"))
-> 
-> 
-> proc.time()
-   user  system elapsed 
-129.503   4.851 121.976 
+There were 18 warnings (use warnings() to see them)

@@ -1,4 +1,3 @@
-rm(list = ls())
 library(tidyverse); theme_set(theme_bw())
 
 #' Forest plot including harmomic mean intervals
@@ -131,49 +130,49 @@ forest <- function(studies,
 
 
 
-## tests 1 -------------------------------------
-studies <- tibble(y = c(1, -2.3),
-                  lower = y - .5,
-                  upper = y + .5,
-                  names = paste("study", seq_along(y)))
+# ## tests 1 -------------------------------------
+# studies <- tibble(y = c(1, -2.3),
+#                   lower = y - .5,
+#                   upper = y + .5,
+#                   names = paste("study", seq_along(y)))
+# 
+# hMean <- tibble(lower = studies$y - .2,
+#                 upper = studies$y + .2)
+# 
+# randomEffect <- tibble(lower = mean(studies$y) - .2,
+#                        upper = mean(studies$y) + .2)
+# 
+# forest(studies, hMean=hMean, randomEffect = randomEffect)
+# 
+# 
+# 
+# # ## tests 2 -------------------------------------
+# studies <- tibble(y = rnorm(10),
+#                   lower = y - .5,
+#                   upper = y + .5,
+#                   names = paste("study", seq_along(y)))
+# 
+# hMean <- tibble(lower = quantile(studies$y, probs=c(0,.5))-.1,
+#                 upper = quantile(studies$y, probs=c(.6,1))+.1)
+# 
+# randomEffect <- tibble(lower = mean(studies$y) - c(0, .2),
+#                        upper = mean(studies$y) + c(0,.2))
+# 
+# forest(studies, hMean=hMean, randomEffect = randomEffect)
 
-hMean <- tibble(lower = studies$y - .2,
-                upper = studies$y + .2)
-
-randomEffect <- tibble(lower = mean(studies$y) - .2,
-                       upper = mean(studies$y) + .2)
-
-forest(studies, hMean=hMean, randomEffect = randomEffect)
 
 
-
-## tests 2 -------------------------------------
-studies <- tibble(y = rnorm(10),
-                  lower = y - .5,
-                  upper = y + .5,
-                  names = paste("study", seq_along(y)))
-
-hMean <- tibble(lower = quantile(studies$y, probs=c(0,.5))-.1,
-                upper = quantile(studies$y, probs=c(.6,1))+.1)
-
-randomEffect <- tibble(lower = mean(studies$y) - c(0, .2),
-                       upper = mean(studies$y) + c(0,.2))
-
-forest(studies, hMean=hMean, randomEffect = randomEffect)
-
-
-
-## tests 3 --------------------------------------
-studies <- tibble(y = rnorm(20),
-                  lower = y - .5,
-                  upper = y + .5,
-                  names = paste("study", seq_along(y)))
-
-hMean <- tibble(lower = c(-2.1, -.31),
-                upper = lower + c(1.5, 3))
-
-randomEffect <- tibble(lower = mean(studies$y) - .2,
-                       upper = mean(studies$y) + .2)
-
-forest(studies, hMean=hMean, randomEffect = randomEffect)
-
+# ## tests 3 --------------------------------------
+# studies <- tibble(y = rnorm(20),
+#                   lower = y - .5,
+#                   upper = y + .5,
+#                   names = paste("study", seq_along(y)))
+# 
+# hMean <- tibble(lower = c(-2.1, -.31),
+#                 upper = lower + c(1.5, 3))
+# 
+# randomEffect <- tibble(lower = mean(studies$y) - .2,
+#                        upper = mean(studies$y) + .2)
+# 
+# forest(studies, hMean=hMean, randomEffect = randomEffect)
+# 
