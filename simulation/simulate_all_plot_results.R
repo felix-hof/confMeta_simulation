@@ -6,7 +6,7 @@ library(tidyverse); theme_set(theme_bw())
 load(paste0("RData/simulate_all.RData"))
 
 #' Helper function to plot the results
-#' @param data obtained by simulate.R and saved in RData/simulate1.RData
+#' @param data obtained by simulate_all.R and saved in RData/simulate_all.RData
 #' @param measure CI measure to plot
 #' @param by make facets based on "method" or "I2".
 plotPanels <- function(data,
@@ -64,9 +64,11 @@ out2 %>% select(measure) %>% unique() %>% pull() -> measure
 out2 %>% select(dist) %>% unique() %>% pull() -> dist 
 out2 %>% select(bias) %>% unique() %>% pull() -> bias 
 out2 %>% select(large) %>% unique() %>% pull() -> large 
+out2 %>% select(heterogeneity) %>% unique() %>% pull() -> heterogeneity 
 
-grid <- expand.grid(measure = measure, dist = dist, bias = bias, large = large,
-                    stringsAsFactors = FALSE)
+grid <- expand.grid(measure = measure, dist = dist, bias = bias, large = large, 
+                    heterogeneity = heterogeneity, stringsAsFactors = FALSE) %>% 
+    filter(!(measure == "coverage_effects" & heterogeneity == "multiplicative"))
 
 
 
@@ -75,16 +77,19 @@ for(i in 1:nrow(grid)){
         print(grid[i,])
         out2[out2$dist == grid[i, "dist"] &
              out2$measure == grid[i, "measure"] &
-             out2$bias == grid[i, "bias"]&
-             out2$large == grid[i, "large"], ] %>%
+             out2$bias == grid[i, "bias"] &
+             out2$large == grid[i, "large"] &
+             out2$heterogeneity == grid[i, "heterogeneity"], ] %>%
             plotPanels(data=., measure = grid[i, "measure"], by="method") +
             ggtitle(paste0("dist: ", grid[i, "dist"],
                            ", bias: ", grid[i, "bias"],
-                           ", theta: 0.2, no. of large studies: ", grid[i, "large"], sep=""))
+                           ", theta: 0.2, no. of large studies: ", grid[i, "large"],
+                           ", simulation model: ", grid[i, "heterogeneity"], sep=""))
         ggsave(filename = paste0("figs/simulate_all",
                                  "_", grid[i, "dist"],
                                  "_large_", grid[i, "large"],
                                  "_bias_", grid[i, "bias"],
+                                 "_sim-mod_", grid[i, "heterogeneity"], 
                                  "_", grid[i, "measure"], ".png"),
                width = 7,
                height = 6,
@@ -98,56 +103,99 @@ for(i in 1:nrow(grid)){
 for(di in dist)
     for(la in large)
         for(me in measure)
-            system(paste0("convert ",
-                          "figs/simulate_all",
-                          "_", di,
-                          "_large_", la,
-                          "_bias_none",
-                          "_", me, ".png",
-                          " ",
-                          "figs/simulate_all",
-                          "_", di,
-                          "_large_", la,
-                          "_bias_moderate",
-                          "_", me, ".png",
-                          " ",
-                          "figs/simulate_all",
-                          "_", di,
-                           "_large_", la,
-                          "_bias_strong",
-                          "_", me, ".png",
-                          " +append ",
-                           "figs/simulate_all_summary_panel_BIAS",
-                          "_", di,
-                          "_large_", la,
-                          "_", me, ".png"))
+            for(he in heterogeneity)
+                if(!(he == "multiplicative" & me == "coverage_effects")){
+                    system(paste0("convert ",
+                                  "figs/simulate_all",
+                                  "_", di,
+                                  "_large_", la,
+                                  "_bias_none",
+                                  "_sim-mod_", he,
+                                  "_", me, ".png",
+                                  " ",
+                                  "figs/simulate_all",
+                                  "_", di,
+                                  "_large_", la,
+                                  "_bias_moderate",
+                                  "_sim-mod_", he,
+                                  "_", me, ".png",
+                                  " ",
+                                  "figs/simulate_all",
+                                  "_", di,
+                                  "_large_", la,
+                                  "_bias_strong",
+                                  "_sim-mod_", he,
+                                  "_", me, ".png",
+                                  " +append ",
+                                  "figs/simulate_all_summary_panel_BIAS",
+                                  "_", di,
+                                  "_large_", la,
+                                  "_sim-mod_", he,
+                                  "_", me, ".png"))
+                }
+                
 
 ## 2. no large trials 0, 1, 2
 for(di in dist)
     for(bi in bias)
         for(me in measure)
-            system(paste0("convert ",
-                          "figs/simulate_all",
-                          "_", di,
-                          "_large_0",
-                          "_bias_", bi, 
-                          "_", me, ".png",
-                          " ",
-                          "figs/simulate_all",
-                          "_", di,
-                          "_large_1",
-                          "_bias_", bi, 
-                          "_", me, ".png",
-                          " ",
-                          "figs/simulate_all",
-                          "_", di,
-                          "_large_2",
-                          "_bias_", bi, 
-                          "_", me, ".png",
-                          " ",
-                          " +append ",
-                          "figs/simulate_all_summary_panel_TRIAL_SIZE",
-                          "_", di,
-                          "_bias_", bi,
-                          "_", me, ".png"))
+            for(he in heterogeneity)
+                if(!(he == "multiplicative" & me == "coverage_effects")){
+                    system(paste0("convert ",
+                                  "figs/simulate_all",
+                                  "_", di,
+                                  "_large_0",
+                                  "_bias_", bi,
+                                  "_sim-mod_", he,
+                                  "_", me, ".png",
+                                  " ",
+                                  "figs/simulate_all",
+                                  "_", di,
+                                  "_large_1",
+                                  "_bias_", bi, 
+                                  "_sim-mod_", he,
+                                  "_", me, ".png",
+                                  " ",
+                                  "figs/simulate_all",
+                                  "_", di,
+                                  "_large_2",
+                                  "_bias_", bi,
+                                  "_sim-mod_", he,
+                                  "_", me, ".png",
+                                  " ",
+                                  " +append ",
+                                  "figs/simulate_all_summary_panel_TRIAL_SIZE",
+                                  "_", di,
+                                  "_bias_", bi,
+                                  "_sim-mod_", he,
+                                  "_", me, ".png"))
+                }
 
+## 3. heterogeneity model used for simulation
+for(di in dist)
+    for(bi in bias)
+        for(me in measure)
+            for(la in large)
+                if(me != "coverage_effects"){
+                    system(paste0("convert ",
+                                  "figs/simulate_all",
+                                  "_", di,
+                                  "_large_", la,
+                                  "_bias_", bi,
+                                  "_sim-mod_additive",
+                                  "_", me, ".png",
+                                  " ",
+                                  "figs/simulate_all",
+                                  "_", di,
+                                  "_large_", la,
+                                  "_bias_", bi, 
+                                  "_sim-mod_multiplicative",
+                                  "_", me, ".png",
+                                  " ",
+                                  " +append ",
+                                  "figs/simulate_all_summary_panel_SIM-MOD",
+                                  "_", di,
+                                  "_bias_", bi,
+                                  "_sim-mod_", he,
+                                  "_", me, ".png"))
+                }
