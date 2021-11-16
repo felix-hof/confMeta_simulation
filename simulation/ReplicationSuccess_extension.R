@@ -1,7 +1,6 @@
 ## Modified helper functions from the R package ReplicationSuccess
 
-
-
+# heterogeneity argument
 
 #' @rdname hMeanChiSq
 #' @param thetahat Numeric vector of parameter estimates. 
@@ -12,7 +11,7 @@
 #' based on study-specific estimates and standard errors.
 #' @export
 hMeanChiSqMuPhi <- function(thetahat, se, w = rep(1, length(thetahat)), mu = 0,
-                            phi = 1,
+                            phi,
                             alternative = c("greater", "less", "two.sided", "none"),
                             bound = FALSE){
     stopifnot(is.numeric(thetahat),
@@ -101,7 +100,7 @@ hMeanChiSqMuPhi <- function(thetahat, se, w = rep(1, length(thetahat)), mu = 0,
 #' @examples
 #' @export
 #' @import stats
-hMeanChiSqPhiCI <- function(thetahat, se, w = rep(1, length(thetahat)), phi = 1, 
+hMeanChiSqPhiCI <- function(thetahat, se, w = rep(1, length(thetahat)), phi, 
                          alternative = c("two.sided", "greater", "less", "none"),
                          level = 0.95, wGamma = rep(1, length(unique(thetahat)) - 1)){
     stopifnot(is.numeric(thetahat),
@@ -284,7 +283,7 @@ hMeanChiSqCIphi <- function(thetahat, se, w = rep(1, length(thetahat)),
 #' @param thetahat Numeric vector of parameter estimates. 
 #' @param se Numeric vector of standard errors.
 #' @param mu The null hypothesis value. Defaults to 0.
-#' @param tau2 Between-study variance tau^2. Can be estmated, e.g., by
+#' @param tau2 Between-study variance tau^2. Can be estimated, e.g., by
 #' \code{\link[meta]{metagen}}. Defaults to 0.
 #' @return \code{hMeanChiSqMu}: returns the p-value from the harmonic mean chi-squared test
 #' based on study-specific estimates and standard errors.
