@@ -84,7 +84,8 @@ for(i in 1:nrow(grid)){
             ggtitle(paste0("dist: ", grid[i, "dist"],
                            ", bias: ", grid[i, "bias"],
                            ", theta: 0.2, no. of large studies: ", grid[i, "large"],
-                           ", simulation model: ", grid[i, "heterogeneity"], sep=""))
+                           ", simulation model: ", grid[i, "heterogeneity"], sep="")) +
+            theme(plot.title = element_text(size = 10))
         ggsave(filename = paste0("figs/simulate_all",
                                  "_", grid[i, "dist"],
                                  "_large_", grid[i, "large"],
