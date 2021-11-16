@@ -196,7 +196,7 @@ for(di in dist)
                                   " +append ",
                                   "figs/simulate_all_summary_panel_SIM-MOD",
                                   "_", di,
+                                  "_large_", la, 
                                   "_bias_", bi,
-                                  "_sim-mod_", he,
                                   "_", me, ".png"))
                 }
