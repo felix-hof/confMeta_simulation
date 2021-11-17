@@ -72,7 +72,7 @@ simRE <- function(k, sampleSize, effect, I2,
             ## omega^2 = tau^2 * (nu-2)/nu
             ## We use nu=4 dof then omega^2 = tau^2/2, so half as
             ## large as the heterogeneity variance under normality. 
-            delta <- rst(n=k, xi = effect, omega = sqrt(tau2/2), nu = 4)
+            delta <- rst(n = k, xi = effect, omega = sqrt(tau2/2), nu = 4)
         } else {
             delta <- rnorm(n = k, mean = effect, sd = sqrt(tau2))
         }
@@ -80,7 +80,7 @@ simRE <- function(k, sampleSize, effect, I2,
         ## theta[1:ceiling(r*k)] <- theta[1:ceiling(r*k)] + bias
         se <- sqrt(rchisq(n = k, df = 2*n - 2) / (n*(n - 1)))
         o <- cbind("theta" = theta, "se" = se, "delta" = delta)
-    } else {
+    } else { ## multiplicative model
         phi <- 1/(1 - I2)
         if(dist == "t") {
             ## the sn::rst(xi=0, omega, nu) distribution has variance
@@ -89,9 +89,12 @@ simRE <- function(k, sampleSize, effect, I2,
             ## So if we want the variance to be tau^2, then 
             ## omega^2 = tau^2 * (nu-2)/nu
             ## We use nu=4 dof then omega^2 = tau^2/2, so half as
-            ## large as the heterogeneity variance under normality. 
-            theta <- rst(n = k, xi = effect, omega = sqrt(phi/n), nu = 4)
-        } else {
+            ## large as the heterogeneity variance under normality.
+            ## sample sequentially with marginal variance equal to
+            ## (phi-1)*2/n + 2/n = phi*2/n 
+            delta <- rst(n = k, xi = effect, omega = sqrt((phi-1)/n), nu = 4)
+            theta <- rnorm(n = k, mean = delta, sd = sqrt(2/n))
+        } else {  ## Gaussian, sample directly from marginal
             theta <- rnorm(n = k, mean = effect, sd = sqrt(phi*2/n))
         }
         ## theta[1:ceiling(r*k)] <- theta[1:ceiling(r*k)] + bias
@@ -179,11 +182,13 @@ simREbias <- function(k, sampleSize, effect, I2,
               is.finite(effect),
               length(I2) == 1,
               0 <= I2, I2 < 1,
+              length(heterogeneity) == 1,
               !is.null(dist),
               !is.null(large),
               is.numeric(large),
               length(large)==1,
               large %in% c(0,1,2),
+              length(bias) == 1,
               !is.null(bias))
     
     bias <- match.arg(bias)
@@ -435,3 +440,5 @@ dir.create("RData", showWarnings=FALSE)
 sessionInfo <- sessionInfo()
 print(sessionInfo)
 save(out, sessionInfo, file = "RData/simulate_all.RData")
+
+
