@@ -72,29 +72,30 @@ grid <- expand.grid(measure = measure, dist = dist, bias = bias, large = large,
 
 
 
-
+single_plots <- character(nrow(grid))
 for(i in 1:nrow(grid)){
-        print(grid[i,])
-        out2[out2$dist == grid[i, "dist"] &
+    print(grid[i,])
+    single_plots[i] <- paste0("figs/",
+                          grid[i, "dist"],
+                          "_large_", grid[i, "large"],
+                          "_bias_", grid[i, "bias"],
+                          "_sim-mod_", grid[i, "heterogeneity"], 
+                          "_", grid[i, "measure"], ".png")
+    out2[out2$dist == grid[i, "dist"] &
              out2$measure == grid[i, "measure"] &
              out2$bias == grid[i, "bias"] &
              out2$large == grid[i, "large"] &
              out2$heterogeneity == grid[i, "heterogeneity"], ] %>%
-            plotPanels(data=., measure = grid[i, "measure"], by="method") +
-            ggtitle(paste0("dist: ", grid[i, "dist"],
-                           ", bias: ", grid[i, "bias"],
-                           ", theta: 0.2, no. of large studies: ", grid[i, "large"],
-                           ", simulation model: ", grid[i, "heterogeneity"], sep="")) +
-            theme(plot.title = element_text(size = 10))
-        ggsave(filename = paste0("figs/simulate_all",
-                                 "_", grid[i, "dist"],
-                                 "_large_", grid[i, "large"],
-                                 "_bias_", grid[i, "bias"],
-                                 "_sim-mod_", grid[i, "heterogeneity"], 
-                                 "_", grid[i, "measure"], ".png"),
-               width = 7,
-               height = 6,
-               units = "in")
+        plotPanels(data=., measure = grid[i, "measure"], by="method") +
+        ggtitle(paste0("dist: ", grid[i, "dist"],
+                       ", bias: ", grid[i, "bias"],
+                       ", theta: 0.2, no. of large studies: ", grid[i, "large"],
+                       ", simulation model: ", grid[i, "heterogeneity"], sep="")) +
+        theme(plot.title = element_text(size = 10))
+    ggsave(filename = single_plots[i],
+           width = 7,
+           height = 6,
+           units = "in")
 }
 
 
@@ -107,28 +108,28 @@ for(di in dist)
             for(he in heterogeneity)
                 if(!(he == "multiplicative" & me == "coverage_effects")){
                     system(paste0("convert ",
-                                  "figs/simulate_all",
-                                  "_", di,
+                                  "figs/",
+                                  di,
                                   "_large_", la,
                                   "_bias_none",
                                   "_sim-mod_", he,
                                   "_", me, ".png",
                                   " ",
-                                  "figs/simulate_all",
-                                  "_", di,
+                                  "figs/",
+                                  di,
                                   "_large_", la,
                                   "_bias_moderate",
                                   "_sim-mod_", he,
                                   "_", me, ".png",
                                   " ",
-                                  "figs/simulate_all",
-                                  "_", di,
+                                  "figs/",
+                                  di,
                                   "_large_", la,
                                   "_bias_strong",
                                   "_sim-mod_", he,
                                   "_", me, ".png",
                                   " +append ",
-                                  "figs/simulate_all_summary_panel_BIAS",
+                                  "figs/BIAS",
                                   "_", di,
                                   "_large_", la,
                                   "_sim-mod_", he,
@@ -143,60 +144,87 @@ for(di in dist)
             for(he in heterogeneity)
                 if(!(he == "multiplicative" & me == "coverage_effects")){
                     system(paste0("convert ",
-                                  "figs/simulate_all",
-                                  "_", di,
+                                  "figs/",
+                                  di,
                                   "_large_0",
                                   "_bias_", bi,
                                   "_sim-mod_", he,
                                   "_", me, ".png",
                                   " ",
-                                  "figs/simulate_all",
-                                  "_", di,
+                                  "figs/",
+                                  di,
                                   "_large_1",
                                   "_bias_", bi, 
                                   "_sim-mod_", he,
                                   "_", me, ".png",
                                   " ",
-                                  "figs/simulate_all",
-                                  "_", di,
+                                  "figs/",
+                                  di,
                                   "_large_2",
                                   "_bias_", bi,
                                   "_sim-mod_", he,
                                   "_", me, ".png",
                                   " ",
                                   " +append ",
-                                  "figs/simulate_all_summary_panel_TRIAL_SIZE",
+                                  "figs/TRIAL_SIZE",
                                   "_", di,
                                   "_bias_", bi,
                                   "_sim-mod_", he,
                                   "_", me, ".png"))
                 }
 
-## 3. heterogeneity model used for simulation
+## 3. heterogeneity model used for simulation: additive, multiplicative
 for(di in dist)
     for(bi in bias)
         for(me in measure)
             for(la in large)
                 if(me != "coverage_effects"){
                     system(paste0("convert ",
-                                  "figs/simulate_all",
-                                  "_", di,
+                                  "figs/",
+                                  di,
                                   "_large_", la,
                                   "_bias_", bi,
                                   "_sim-mod_additive",
                                   "_", me, ".png",
                                   " ",
-                                  "figs/simulate_all",
-                                  "_", di,
+                                  "figs/",
+                                  di,
                                   "_large_", la,
                                   "_bias_", bi, 
                                   "_sim-mod_multiplicative",
                                   "_", me, ".png",
                                   " ",
                                   " +append ",
-                                  "figs/simulate_all_summary_panel_SIM-MOD",
+                                  "figs/SIM-MOD",
                                   "_", di,
                                   "_large_", la, 
                                   "_bias_", bi,
+                                  "_", me, ".png"))
+                }
+
+## 4. Distribution: t, Gaussian
+for(bi in bias)
+    for(me in measure)
+        for(la in large)
+            for(he in heterogeneity)
+                if(me != "coverage_effects"){
+                    system(paste0("convert ",
+                                  "figs/Gaussian",
+                                  "_large_", la,
+                                  "_bias_", bi,
+                                  "_sim-mod_", he,
+                                  "_", me, ".png",
+                                  " ",
+                                  "figs/t",
+                                  "_large_", la,
+                                  "_bias_", bi, 
+                                  "_sim-mod_", he,
+                                  "_", me, ".png",
+                                  " ",
+                                  " +append ",
+                                  "figs/DIST",
+                                  "_large_", la, 
+                                  "_bias_", bi,
+                                  "_sim_mod_", he,
                                   "_", me, ".png"))
                 }
