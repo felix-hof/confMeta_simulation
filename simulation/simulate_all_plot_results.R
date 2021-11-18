@@ -207,7 +207,7 @@ for(bi in bias)
     for(me in measure)
         for(la in large)
             for(he in heterogeneity)
-                if(me != "coverage_effects"){
+                if(!(he == "multiplicative" & me == "coverage_effects")){
                     system(paste0("convert ",
                                   "figs/Gaussian",
                                   "_large_", la,
@@ -228,3 +228,6 @@ for(bi in bias)
                                   "_sim_mod_", he,
                                   "_", me, ".png"))
                 }
+
+unlink(single_plots)
+
