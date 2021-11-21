@@ -196,6 +196,7 @@ simREbias <- function(k, sampleSize, effect, I2,
     if(bias == "none"){
         o <- simRE(k=k, sampleSize=sampleSize, effect = effect, I2=I2, heterogeneity=heterogeneity, dist=dist, large=large)
         attr(o, "heterogeneity") <- heterogeneity
+        attr(o, which = "effect") <- effect
         return(o)
     }
         
@@ -224,6 +225,7 @@ simREbias <- function(k, sampleSize, effect, I2,
         o <- rbind(oLarge[1:2,], o[-c(1,2),]) 
     }
     attr(o, which = "heterogeneity") <- heterogeneity
+    attr(o, which = "effect") <- effect
     o
 }
 
@@ -268,8 +270,8 @@ sim2CIs <- function(x){
     ## HMeanNone_phi
     HM_phi <- hMeanChiSqCIphi(thetahat = x[, "theta"], se = x[, "se"], 
                                alternative = "none")
-
-    out <- tibble(lower = c(HC$ci.lb,
+    
+    tib <- tibble(lower = c(HC$ci.lb,
                             REML$lower.random,
                             HK$lower.random,
                             HM2$CI[,"lower"], 
@@ -290,7 +292,15 @@ sim2CIs <- function(x){
                              rep("Harmonic Mean", nrow(HM$CI)),
                              rep("Harmonic Mean Additive", nrow(HM_tau2$CI)),
                              rep("Harmonic Mean Multiplicative", nrow(HM_phi$CI))))
-    attr(out, "heterogeneity") <- attributes(x)$heterogeneity
+    out <- list(CIs = tib,
+                model = attributes(x)$heterogeneity,
+                gamma = tibble("method" = c("Harmonic Mean", "Harmonic Mean Additive", "Harmonic Mean Multiplicative"),
+                               "gamma_min" = c(min(HM$gamma[,2]), min(HM_tau2$gamma[,2]), min(HM_phi$gamma[,2])),
+                               "x_gamma_min" = c(HM$gamma[which.min(HM$gamma[,2]),1], HM_tau2$gamma[which.min(HM_tau2$gamma[,2]),1], 
+                                                 HM_phi$gamma[which.min(HM_phi$gamma[,2]),1])),
+                theta = x[, "theta"],
+                delta = x[, "delta"],
+                effect = attributes(x)$effect)
     out
 }
 
@@ -298,57 +308,64 @@ sim2CIs <- function(x){
 
 #' Computes quality measures for CIs
 #'
-#' @param x a tibble with columns \code{lower}, \code{upper}, and \code{method}.
-#' as obtained from \code{sim2CIs}
-#' @param theta simulated effect estimates of the study.
-#' @param delta simulated effects of the study under the additive heterogeneity model.
-#' @param effect effect size.
+#' @param x a list with elements \code{CIs}, \code{model}, \code{gamma}, \code{theta}, 
+#' \code{delta} and \code{effect} as obtained from \code{sim2CIs}.
 #' @return a tibble with columns 
 #' \item{\code{method}}{method}
 #' \item{\code{width}}{with of the intervals}
 #' \item{\code{coverage}}{covarage of the true value 0}
 #' \item{\code{score}}{interval score as defined in Gneiting and Raftery (2007)}
+#' \item{\code{coverage_effects}}{Proportion of study effects covered by the interval(s).}
 #' \item{\code{n}}{Number of intervals}
-CI2measures <- function(x, theta, delta, effect) {
-    methods <- unique(x$method)
+CI2measures <- function(x) {
+    methods <- unique(x$CIs$method)
     foreach(i = seq_along(methods), .combine = rbind) %do% {
-        x %>% filter(method == methods[i]) %>%
+        x$CIs %>% filter(method == methods[i]) %>%
             select(lower, upper) %>%
             as.matrix() ->
             x_sub
         
-        if(attributes(x)$heterogeneity == "additive"){
-            sapply(theta, function(theta){
-                any(x_sub[,"lower"] <= delta & delta <= x_sub[,"upper"])
-            }) %>%
+        if(x$model == "additive"){
+            vapply(x$theta, function(theta){
+                any(x_sub[,"lower"] <= theta & theta <= x_sub[,"upper"])
+            }, logical(1L)) %>%
                 mean() ->
                 coverage_effects
+        } else {
+            coverage_effects <- NA_real_
+        }
+        
+        if(methods[i] %in% paste0("Harmonic Mean", c("", " Additive", " Multiplicative"))){
+            gamma_min <- x$gamma %>% filter(method == methods[i]) %>% pull(gamma_min)
+        } else {
+            gamma_min <- NA_real_
         }
 
         { x_sub[,"upper"] - x_sub[,"lower"] } %>%
             sum(.) ->
             width
         
-        as.numeric(any(x_sub[,"lower"] <= effect & effect <= x_sub[,"upper"])) ->
+        as.numeric(any(x_sub[,"lower"] <= x$effect & x$effect <= x_sub[,"upper"])) ->
             coverage
         
         width + (2/0.05) * min(abs(x_sub[,"lower"]), abs(x_sub[,"upper"])) * (1 - coverage) ->
             score
         
-        if(attributes(x)$heterogeneity == "additive"){
-            out <- tibble(method = methods[i], width = width, coverage = coverage, score = score,
-                          coverage_effects = coverage_effects, n = nrow(x_sub))
-            
-        } else if(attributes(x)$heterogeneity == "multiplicative"){
-            out <- tibble(method = methods[i], width = width, coverage = coverage, score = score,
-                          n = nrow(x_sub))
+        if(all(is.na(x_sub))){
+            n <- NA_real_
+        } else {
+            n <- nrow(x_sub)
         }
         
+       out <- tibble(method = methods[i], 
+                     coverage = coverage, coverage_effects = coverage_effects,
+                     gammaMin = gamma_min, n = n,
+                     score = score, width = width)
+        
+        # return
         out
     }
 }
-
-
 
 
 
@@ -374,40 +391,129 @@ CI2measures <- function(x, theta, delta, effect) {
 #' \item{measure}{measure to assess the CI}
 #' \item{value}{value of the measure}
 sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time())){
+    
     stopifnot(is.data.frame(grid),
               c("sampleSize", "I2", "k", "dist", 
                 "effect", "large", "heterogeneity", "bias") %in% names(grid),
               is.numeric(N), length(N) == 1, 1 <= N)
+    
     registerDoParallel(cores)
-    foreach(j = seq_len(nrow(grid)), .combine = rbind, .options.RNG=seed) %dorng% {
-        cat("start", j, "of", nrow(grid), fill=TRUE)
-        grid %>% slice(j) -> pars
-
-        foreach(i = seq_len(N), .combine = rbind) %do% {
-            res <- simREbias(k = pars$k, sampleSize = pars$sampleSize,
-                             effect = pars$effect, I2 = pars$I2,
-                             heterogeneity = pars$heterogeneity,
-                             dist = pars$dist, bias = pars$bias,
-                             large = pars$large)
-            CIs <- sim2CIs(x = res)
-            CI2measures(x = CIs, theta = res[,"theta"], delta = res[,"delta"],
-                        effect = pars$effect)
-        } -> av
-
-        ## compute the mean values of each measure
-        av %>% group_by(method) %>%
-            summarize(across(everything(), mean, .names = "{.col}_mean"
-                      ## width_sd = sd(width),
-                      ## coverage_sd = sd(coverage),
-                      ## score_sd = sd(score)
-                      )) %>%
-            pivot_longer(cols = ends_with("mean"),
-                         names_to = "measure",
-                         values_to = "value"
-                   ## width_sd, coverage_sd, score_sd
-                   ) %>%
-            cbind(pars, .) -> out
+    on.exit(stopImplicitCluster())
+    
+    foreach(j = seq_len(nrow(grid)), .options.RNG=seed, .errorhandling = "pass") %dorng% {
+        
+        if(file.exists("error.txt")){
+            # if error happened, skip the rest of the loop iterations
+            out <- "skipped"
+        } else {
+            
+            cat("start", j, "of", nrow(grid), fill=TRUE)
+            grid %>% slice(j) -> pars
+            
+            # av is either a tibble or NULL
+            av <- tryCatch({
+                foreach(i = seq_len(N), .combine = rbind) %do% {
+                    res <- simREbias(k = pars$k, sampleSize = pars$sampleSize,
+                                     effect = pars$effect, I2 = pars$I2,
+                                     heterogeneity = pars$heterogeneity,
+                                     dist = pars$dist, bias = pars$bias,
+                                     large = pars$large)
+                    CIs <- sim2CIs(x = res)
+                    CI2measures(x = CIs)
+                } -> av
+                av
+            }, 
+            error = function(cond){
+                text = capture.output(cond)
+                cat("Parameters are:\n",
+                    paste0(paste0(names(pars), ":", pars[1, ]), collapse = "\n"),
+                    "\n\n", "The error message is:\n",
+                    text, "\n\n",
+                    file = "error.txt", append = TRUE)
+                return(NULL)
+            })
+            
+            # out is either a tibble or "failed"
+            if(is.null(av)){
+                out <- "failed"
+            } else {
+                out <- tryCatch({
+                    ## compute mean for everything
+                    bind_rows(
+                        # mean for all measures
+                        av %>% group_by(method) %>%
+                            summarize(across(everything(), 
+                                             .fns = list(mean = function(x){if(any(is.na(x))){NA_real_} else {mean(x, na.rm = TRUE)}}),
+                                             .names = "{.col}_{.fn}"),
+                                      .groups = "drop"
+                            ) %>% 
+                            pivot_longer(cols = !method,
+                                         names_to = "measure",
+                                         values_to = "value"
+                                         ## width_sd, coverage_sd, score_sd
+                            ) %>%
+                            cbind(pars, .),
+                        
+                        # summary statistics for gamma_min
+                        av %>% filter(method %in% c("Harmonic Mean", "Harmonic Mean Additive", "Harmonic Mean Multiplicative")) %>%
+                            group_by(method) %>%
+                            summarize(across("gammaMin", 
+                                             .fns = list(min = function(x){if(any(is.na(x))){NA_real_} else {min(x, na.rm = TRUE)}}, 
+                                                         firstQuart = function(x){if(any(is.na(x))){NA_real_} else {quantile(x, probs = 0.25, na.rm = TRUE, names = FALSE)}},
+                                                         median = function(x){if(any(is.na(x))){NA_real_} else {median(x, na.rm = TRUE)}},
+                                                         mean = function(x){if(any(is.na(x))){NA_real_} else {mean(x, na.rm = TRUE)}},
+                                                         thirdQuart = function(x){if(any(is.na(x))){NA_real_} else {quantile(x, probs = 0.75, na.rm = TRUE, names = FALSE)}},
+                                                         max = function(x){if(any(is.na(x))){NA_real_} else {max(x, na.rm = TRUE)}}),
+                                             .names = "{.col}_{.fn}"),
+                                      .groups = "drop"
+                            ) %>%
+                            pivot_longer(cols = !method,
+                                         names_to = "measure",
+                                         values_to = "value"
+                            ) %>%
+                            cbind(pars, .),
+                        
+                        # relative frequency for n
+                        av %>% filter(method %in% c("Harmonic Mean", "Harmonic Mean Additive", "Harmonic Mean Multiplicative")) %>%
+                            group_by(method) %>%
+                            summarize(across("n", 
+                                             .fns = list("1" = function(x) sum(x == 1),
+                                                         "2" = function(x) sum(x == 2),
+                                                         "3" = function(x) sum(x == 3),
+                                                         "4" = function(x) sum(x == 4),
+                                                         "5" = function(x) sum(x == 5),
+                                                         "6" = function(x) sum(x == 6),
+                                                         "7" = function(x) sum(x == 7),
+                                                         "8" = function(x) sum(x == 8),
+                                                         "9" = function(x) sum(x == 9),
+                                                         "gt9" = function(x) sum(x >= 10)),
+                                             .names = "{.col}_{.fn}"),
+                                      .groups = "drop"
+                            ) %>%
+                            pivot_longer(cols = !method,
+                                         names_to = "measure",
+                                         values_to = "value"
+                            ) %>%
+                            filter(!is.na(value)) %>% 
+                            cbind(pars, .)
+                    )
+                },
+                error = function(cond){
+                    text <- capture.output(cond)
+                    cat("Parameters are:\n",
+                        paste0(paste0(names(pars), ":", pars[1, ]), collapse = "\n"),
+                        "\n\n", "The error message is:\n",
+                        text, "\n\n",
+                        "The av object has been saved to 'error.rds'.",
+                        file = "error.rds", append = TRUE)
+                    saveRDS(av, file = "error.rds")
+                    return("failed")
+                })
+            }
+            
+        }
         out
+        
     } -> o
     attr(o, "seed") <- seed
     attr(o, "N") <- N
