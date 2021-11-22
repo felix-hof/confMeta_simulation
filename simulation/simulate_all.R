@@ -22,7 +22,7 @@
 ## Florian Gerber, florian.gerber@uzh.ch, Oct. 14, 2021
 rm(list = ls())
 library(meta)
-source("ReplicationSuccess_extension.R")
+source("ReplicationSuccess_extension_LH.R")
 library(tidyverse); theme_set(theme_bw())
 library(rlang)
 library(doParallel)
