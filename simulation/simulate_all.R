@@ -532,7 +532,8 @@ grid <- expand.grid(sampleSize = 50,                                 # sample si
                     dist = c("Gaussian", "t"),                       # distribution 
                     bias = c("none", "moderate", "strong"),          # bias
                     large = c(0, 1, 2),                              # number of large studies
-                    stringsAsFactors = FALSE)        
+                    stringsAsFactors = FALSE) %>% 
+    arrange(desc(heterogeneity))
 
 
 ## run simulation, e.g., on the Rambo server of I-MATH
