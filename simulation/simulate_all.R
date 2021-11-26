@@ -411,32 +411,61 @@ sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time
             grid %>% slice(j) -> pars
             
             # av is either a tibble or NULL
-            av <- tryCatch({
-                foreach(i = seq_len(N), .combine = rbind) %do% {
-                    res <- simREbias(k = pars$k, sampleSize = pars$sampleSize,
-                                     effect = pars$effect, I2 = pars$I2,
-                                     heterogeneity = pars$heterogeneity,
-                                     dist = pars$dist, bias = pars$bias,
-                                     large = pars$large)
-                    CIs <- sim2CIs(x = res)
-                    CI2measures(x = CIs)
-                } -> av
-                av
-            }, 
-            error = function(cond){
-                text = capture.output(cond)
-                cat("Parameters are:\n",
-                    paste0(paste0(names(pars), ":", pars[1, ]), collapse = "\n"),
-                    "\n\n", "The error message is:\n",
-                    text, "\n\n",
-                    file = "error.txt", append = TRUE)
-                return(NULL)
-            })
+            av <- foreach(i = seq_len(N), .errorhandling = "pass") %do% {
+                if(file.exists("error.txt")){return(NA)}
+                res <- tryCatch({
+                    #if(i == 17) stop("Error in iteration 17")
+                    simREbias(k = pars$k, sampleSize = pars$sampleSize,
+                                           effect = pars$effect, I2 = pars$I2,
+                                           heterogeneity = pars$heterogeneity,
+                                           dist = pars$dist, bias = pars$bias,
+                                           large = pars$large)},
+                    error = function(cond){
+                        text = capture.output(cond)
+                        cat("Error in simREbias, iteration:", i,
+                            "\nParameters are:",
+                            paste0("\n", paste0(paste0(names(pars), ":", pars[1, ]), collapse = "\n")),
+                            "\n",
+                            "\nThe error message is:",
+                            paste0("\n", text), "\n",
+                            file = "error.txt", append = TRUE)
+                        return(NA)
+                    })
+                CIs <- tryCatch({if(is.logical(res)){NA} else {sim2CIs(x = res)}},
+                                error = function(cond){
+                                    text = capture.output(cond)
+                                    cat("Error in sim2CIs, iteration:", i,
+                                        "\nParameters are:",
+                                        paste0("\n", paste0(paste0(names(pars), ":", pars[1, ]), collapse = "\n")),
+                                        "\n", 
+                                        "\nThe error message is:",
+                                        paste0("\n", text), "\n",
+                                        "\nSee error.rds for the current simulation.",
+                                        file = "error.txt", append = TRUE)
+                                    saveRDS(res, file = "error.rds")
+                                    return(NA)
+                                })
+                out <- tryCatch({if(is.logical(CIs)){NA} else {CI2measures(x = CIs)}},
+                                error = function(cond){
+                                    text = capture.output(cond)
+                                    cat("Error in CI2measures, iteration:", i,
+                                        "\nParameters are:",
+                                        paste0("\n", paste0(paste0(names(pars), ":", pars[1, ]), collapse = "\n")),
+                                        "\n", 
+                                        "\nThe error message is:",
+                                        paste0("\n", text), "\n",
+                                        "\nSee error.rds for the current simulation.",
+                                        file = "error.txt", append = TRUE)
+                                    saveRDS(res, file = "error.rds")
+                                    return(NA)
+                                })
+                out
+            }
             
-            # out is either a tibble or "failed"
-            if(is.null(av)){
+            if(any(is.na(av))){
                 out <- "failed"
             } else {
+                av <- do.call(rbind, av)
                 out <- tryCatch({
                     ## compute mean for everything
                     bind_rows(
@@ -538,7 +567,7 @@ grid <- expand.grid(sampleSize = 50,                                 # sample si
 
 ## run simulation, e.g., on the Rambo server of I-MATH
 tic()
-out <- sim(grid = grid, N=10000, cores = 120)
+out <- sim(grid = grid, N=50, cores = 120)
 toc()
 
 
