@@ -5,7 +5,7 @@ library(tidyverse); theme_set(theme_bw())
 
 load(paste0("RData/simulate_all.RData"))
 
-#' Helper function to plot the results
+#' Helper function to plot means
 #' @param data obtained by simulate_all.R and saved in RData/simulate_all.RData
 #' @param measure CI measure to plot
 #' @param by make facets based on "method" or "I2".
@@ -51,14 +51,19 @@ plotPanels <- function(data,
 ##     arrange(method)
 
 
+## Mean plots ---------------------------------------------------------------------
 
+out %>% 
+    bind_rows() -> out2
 
 ## 4.1
 dir.create("figs", showWarnings = FALSE)
-out %>%
-    filter(method != "Harmonic Mean two sided") %>%
+dir.create("figs/meanplots", showWarnings = FALSE)
+out2 %>%
+    filter(method != "Harmonic Mean two sided",
+           grepl("_mean", measure), !grepl("gammaMin", measure)) %>%
     mutate(method = ifelse(method == "REML", "Random Effects, default, REML", method),
-           measure = gsub("_mean", "", measure))-> out2
+           measure = gsub("_mean", "", measure)) -> out2
 
 out2 %>% select(measure) %>% unique() %>% pull() -> measure
 out2 %>% select(dist) %>% unique() %>% pull() -> dist 
@@ -75,7 +80,7 @@ grid <- expand.grid(measure = measure, dist = dist, bias = bias, large = large,
 single_plots <- character(nrow(grid))
 for(i in 1:nrow(grid)){
     print(grid[i,])
-    single_plots[i] <- paste0("figs/",
+    single_plots[i] <- paste0("figs/meanplots/",
                           grid[i, "dist"],
                           "_large_", grid[i, "large"],
                           "_bias_", grid[i, "bias"],
@@ -108,28 +113,28 @@ for(di in dist)
             for(he in heterogeneity)
                 if(!(he == "multiplicative" & me == "coverage_effects")){
                     system(paste0("convert ",
-                                  "figs/",
+                                  "figs/meanplots/",
                                   di,
                                   "_large_", la,
                                   "_bias_none",
                                   "_sim-mod_", he,
                                   "_", me, ".png",
                                   " ",
-                                  "figs/",
+                                  "figs/meanplots/",
                                   di,
                                   "_large_", la,
                                   "_bias_moderate",
                                   "_sim-mod_", he,
                                   "_", me, ".png",
                                   " ",
-                                  "figs/",
+                                  "figs/meanplots/",
                                   di,
                                   "_large_", la,
                                   "_bias_strong",
                                   "_sim-mod_", he,
                                   "_", me, ".png",
                                   " +append ",
-                                  "figs/BIAS",
+                                  "figs/meanplots//BIAS",
                                   "_", di,
                                   "_large_", la,
                                   "_sim-mod_", he,
@@ -144,21 +149,21 @@ for(di in dist)
             for(he in heterogeneity)
                 if(!(he == "multiplicative" & me == "coverage_effects")){
                     system(paste0("convert ",
-                                  "figs/",
+                                  "figs/meanplots/",
                                   di,
                                   "_large_0",
                                   "_bias_", bi,
                                   "_sim-mod_", he,
                                   "_", me, ".png",
                                   " ",
-                                  "figs/",
+                                  "figs/meanplots/",
                                   di,
                                   "_large_1",
                                   "_bias_", bi, 
                                   "_sim-mod_", he,
                                   "_", me, ".png",
                                   " ",
-                                  "figs/",
+                                  "figs/meanplots/",
                                   di,
                                   "_large_2",
                                   "_bias_", bi,
@@ -166,7 +171,7 @@ for(di in dist)
                                   "_", me, ".png",
                                   " ",
                                   " +append ",
-                                  "figs/TRIAL_SIZE",
+                                  "figs/meanplots/TRIAL_SIZE",
                                   "_", di,
                                   "_bias_", bi,
                                   "_sim-mod_", he,
@@ -180,14 +185,14 @@ for(di in dist)
             for(la in large)
                 if(me != "coverage_effects"){
                     system(paste0("convert ",
-                                  "figs/",
+                                  "figs/meanplots/",
                                   di,
                                   "_large_", la,
                                   "_bias_", bi,
                                   "_sim-mod_additive",
                                   "_", me, ".png",
                                   " ",
-                                  "figs/",
+                                  "figs/meanplots/",
                                   di,
                                   "_large_", la,
                                   "_bias_", bi, 
@@ -195,7 +200,7 @@ for(di in dist)
                                   "_", me, ".png",
                                   " ",
                                   " +append ",
-                                  "figs/SIM-MOD",
+                                  "figs/meanplots/SIM-MOD",
                                   "_", di,
                                   "_large_", la, 
                                   "_bias_", bi,
@@ -209,20 +214,20 @@ for(bi in bias)
             for(he in heterogeneity)
                 if(!(he == "multiplicative" & me == "coverage_effects")){
                     system(paste0("convert ",
-                                  "figs/Gaussian",
+                                  "figs/meanplots/Gaussian",
                                   "_large_", la,
                                   "_bias_", bi,
                                   "_sim-mod_", he,
                                   "_", me, ".png",
                                   " ",
-                                  "figs/t",
+                                  "figs/meanplots/t",
                                   "_large_", la,
                                   "_bias_", bi, 
                                   "_sim-mod_", he,
                                   "_", me, ".png",
                                   " ",
                                   " +append ",
-                                  "figs/DIST",
+                                  "figs/meanplots/DIST",
                                   "_large_", la, 
                                   "_bias_", bi,
                                   "_sim_mod_", he,
@@ -230,4 +235,163 @@ for(bi in bias)
                 }
 
 unlink(single_plots)
+
+## gamma_min summary statistics -----------------------------------------------------------
+
+dir.create("figs/min_pH", showWarnings = FALSE)
+
+out2 <- out %>% 
+    bind_rows() %>%
+    filter(grepl("gammaMin", measure), 
+           method %in% c("Harmonic Mean", 
+                         "Harmonic Mean Additive", 
+                         "Harmonic Mean Multiplicative")) %>% 
+    distinct() %>% 
+    mutate(measure = gsub("^gammaMin_", "", measure),
+           measure = case_when(measure == "min" ~ "Minimum",
+                               measure == "firstQuart" ~ "1. Quartile",
+                               measure == "mean" ~ "Mean",
+                               measure == "median" ~ "Median",
+                               measure == "thirdQuart" ~ "3. Quartile",
+                               measure == "max" ~ "Maximum"),
+           measure = ordered(measure, levels = c("Maximum", "3. Quartile", "Median", "Mean", "1. Quartile", "Minimum")))
+
+out2 %>% select(dist) %>% unique() %>% pull() -> dist 
+out2 %>% select(bias) %>% unique() %>% pull() -> bias 
+out2 %>% select(large) %>% unique() %>% pull() -> large 
+out2 %>% select(heterogeneity) %>% unique() %>% pull() -> heterogeneity
+out2 %>% select(I2) %>% unique() %>% pull() -> I2 
+#out2 %>% select(measure) %>% unique() %>% pull() -> me 
+
+for(di in dist){
+    for(la in large){
+        for(bi in bias){
+            for(he in heterogeneity){
+                for(i in I2){
+                    out2 %>% 
+                        filter(dist == di, bias == bi, large == la, heterogeneity == he, I2 == i) %>%
+                        ggplot(aes(x = k, y = value, colour = measure)) +
+                        facet_wrap(~ method) +
+                        geom_point() +
+                        geom_line() +
+                        xlab("# studies") + 
+                        labs(colour = "Statistic") +
+                        ggtitle(bquote("dist:"~.(di)~", bias: "~.(bi)~", "~theta~": 0.2, "~I^2~": "~.(i)~", no. of large studies: "~.(la)~", simulation model: "~.(he)))
+                    ggsave(filename = paste0("figs/min_pH/MIN-PH_", di, "_bias_", bi, "_large_", la,"_sim-mod_", he, "_I2_", i, ".png"),
+                           width = 10,
+                           height = 11,
+                           units = "in")
+                    
+                    
+                }
+            }
+        }
+    }
+}
+
+
+## relative frequencies -----------------------------------------------------------
+
+dir.create("figs/rel_freq", showWarnings = FALSE)
+
+out2 <- out %>% 
+    bind_rows() %>%
+    filter(!grepl("gammaMin", measure),
+           !grepl("mean", measure),
+           method %in% c("Harmonic Mean", 
+                         "Harmonic Mean Additive", 
+                         "Harmonic Mean Multiplicative")) %>% 
+    distinct() %>% 
+    mutate(measure = gsub("n_", "", measure),
+           measure = gsub("gt", "> ", measure),
+           measure = ordered(measure, levels = rev(c("> 9", as.character(9:1)))),
+           value = value/10000)
+
+out2 %>% select(dist) %>% unique() %>% pull() -> dist 
+out2 %>% select(bias) %>% unique() %>% pull() -> bias 
+out2 %>% select(large) %>% unique() %>% pull() -> large 
+out2 %>% select(heterogeneity) %>% unique() %>% pull() -> heterogeneity
+out2 %>% select(I2) %>% unique() %>% pull() -> I2 
+out2 %>% select(k) %>% unique() %>% pull() -> k
+
+for(di in dist){
+    for(la in large){
+        for(bi in bias){
+            for(he in heterogeneity){
+                for(i in I2){
+                    for(K in k){
+                        out2 %>% 
+                            filter(dist == di, bias == bi, large == la, heterogeneity == he, I2 == i, k == K) %>%
+                            ggplot(aes(x = measure, y = value, fill = k)) +
+                            facet_wrap(~ method) +
+                            geom_col() +
+                            xlab("# intervals") + 
+                            ylab("relative frequency") +
+                            theme(legend.position = "none") +
+                            ggtitle(bquote("# studies: "~.(K)~", dist:"~.(di)~", bias: "~.(bi)~", "~theta~": 0.2, "~I^2~": "~.(i)~", # large studies: "~.(la)~", simulation model: "~.(he)))
+                        ggsave(filename = paste0("figs/rel_freq/k_", K, "_", di, "_bias_", bi, "_large_", la,"_sim-mod_", he, "_I2_", i, ".png"),
+                               width = 10,
+                               height = 11,
+                               units = "in")
+                        
+                        
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+for(di in dist){
+    for(la in large){
+        for(bi in bias){
+            for(he in heterogeneity){
+                for(i in I2){
+                    system(paste0("convert \\( ",
+                                  "figs/rel_freq/k_2_",
+                                  di,
+                                  "_bias_", bi,
+                                  "_large_", la,
+                                  "_sim-mod_", he,
+                                  "_I2_", i,
+                                  ".png ",
+                                  "figs/rel_freq/k_3_",
+                                  di,
+                                  "_bias_", bi,
+                                  "_large_", la,
+                                  "_sim-mod_", he,
+                                  "_I2_", i,
+                                  ".png ",
+                                  "+append \\) ",
+                                  "\\( ",
+                                  "figs/rel_freq/k_5_",
+                                  di,
+                                  "_bias_", bi,
+                                  "_large_", la,
+                                  "_sim-mod_", he,
+                                  "_I2_", i,
+                                  ".png ",
+                                  "figs/rel_freq/k_10_",
+                                  di,
+                                  "_bias_", bi,
+                                  "_large_", la,
+                                  "_sim-mod_", he,
+                                  "_I2_", i,
+                                  ".png ",
+                                  "+append \\) ",
+                                  "figs/rel_freq/k_20_",
+                                  di,
+                                  "_bias_", bi,
+                                  "_large_", la,
+                                  "_sim-mod_", he,
+                                  "_I2_", i,
+                                  ".png ",
+                                  "-append figs/rel_freq/STUDIES_", di, "_bias_", bi,"_large_", la, "_sim-mod_", he, "_I2_", i, ".png "))
+                }
+            }
+        }
+    }
+}
+
 
