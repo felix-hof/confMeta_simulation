@@ -251,20 +251,14 @@ hMeanChiSqPhiCI <- function(thetahat, se, w = rep(1, length(thetahat)), phi = 1,
 #' thetahat[1] <- 7
 #' estimatePhi(thetahat = thetahat, se = se)
 estimatePhi <- function(thetahat, se){
-    stopifnot(is.numeric(thetahat),
-              length(thetahat) > 0,
-              is.finite(thetahat),
-              is.numeric(se),
-              length(se) == 1 || length(se) == length(thetahat),
-              is.finite(se),
-              min(se) > 0)
-    
-    m <- lm(thetahat ~ 1, weights = 1 / se^2)
-    mse <- anova(m)$`Mean Sq`[1]
-    ## corresponds to:
-    ## mse <- sum(summary(m)$residuals^2) / (length(thetahat) - 1)
-    return(mse)
-    ##    max(1, mse)
+    n <- length(thetahat)
+    X2 <- vapply(seq_len(n), function(i){
+        Z <- matrix((thetahat[-i] - thetahat[i]), nrow = 1)
+        Sigma <- matrix(se[i]^2, nrow = n - 1, ncol = n - 1)
+        diag(Sigma) <- se[-i]^2 + se[i]^2
+        return( (n-1)^2 / ( (1/Z) %*% Sigma %*% t(1/Z) ) )
+    }, double(1L))
+    return(weighted.mean(x=X2, w=1/se^2))
 }
 
 
@@ -558,4 +552,5 @@ hMeanChiSqCI <- function(thetahat, se, w = rep(1, length(thetahat)), tau2 = 0,
     }
     stop("function not get here.")
 }
-
+
+
