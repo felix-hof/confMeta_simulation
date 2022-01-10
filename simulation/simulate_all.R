@@ -367,16 +367,11 @@ CI2measures <- function(x, pars) {
             
         
         # calculate whether interval covers future study (only for hMean, hMean_additive, hMean_multiplicative)
-        if(grepl("Harmonic Mean CI|Harmonic Mean Additive CI|Harmonic Mean Multiplicative CI|PI", methods[i])){
-            new_study <- simREbias(k = 1, sampleSize = pars$sampleSize, effect = pars$effect, 
-                                   I2 = pars$I2, heterogeneity = pars$heterogeneity, 
-                                   dist = pars$dist, large = 0, bias = "none")[, "delta"]
-            coverage_prediction <- as.numeric(any(x_sub[,"lower"] <= x$effect & x$effect <= x_sub[,"upper"]))
-        } else {
-            coverage_prediction <- NA_real_
-        }
-        
-        
+        new_study <- simREbias(k = 1, sampleSize = pars$sampleSize, effect = pars$effect, 
+                               I2 = pars$I2, heterogeneity = pars$heterogeneity, 
+                               dist = pars$dist, large = 0, bias = "none")[, "delta"]
+        coverage_prediction <- as.numeric(any(x_sub[,"lower"] <= x$effect & x$effect <= x_sub[,"upper"]))
+             
         if(grepl("Harmonic Mean CI|Harmonic Mean Additive CI|Harmonic Mean Multiplicative CI", methods[i])){
             gamma_min <- x$gamma %>% filter(method == methods[i]) %>% pull(gamma_min)
         } else {
