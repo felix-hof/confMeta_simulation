@@ -6,15 +6,22 @@
 #' @rdname hMeanChiSq
 #' @param thetahat Numeric vector of parameter estimates. 
 #' @param se Numeric vector of standard errors.
+#' @param w 
 #' @param mu The null hypothesis value. Defaults to 0.
 #' @param phi Multiplicative between-study variance.
+#' @param alternative What 
+#' @param distr The distribution to use for the calculation of the p-value. Currently, there are
+#' f and chi-squared distributions.
+#' @param bound
 #' @return \code{hMeanChiSqMuPhi}: returns the p-value from the harmonic mean chi-squared test
 #' based on study-specific estimates and standard errors.
 #' @export
 hMeanChiSqMuPhi <- function(thetahat, se, w = rep(1, length(thetahat)), mu = 0,
-                            phi = 1,
+                            phi,
                             alternative = c("greater", "less", "two.sided", "none"),
+                            distr = c("f", "chisq"),
                             bound = FALSE){
+    
     stopifnot(is.numeric(thetahat),
               length(thetahat) > 0,
               is.finite(thetahat),
@@ -35,55 +42,70 @@ hMeanChiSqMuPhi <- function(thetahat, se, w = rep(1, length(thetahat)), mu = 0,
 
               is.numeric(phi),
               length(phi) == 1,
-              is.finite(phi))
-    ## if(phi < 1)
-    ##     phi <- 1
-    stopifnot(!is.null(alternative))
-    alternative <- match.arg(alternative)
-    stopifnot(is.logical(bound),
+              is.finite(phi),
+              
+              is.logical(bound),
               length(bound) == 1,
-              is.finite(bound))
+              is.finite(bound),
+              
+              !is.null(alternative),
+              length(alternative) == 1,
+              
+              length(distr) == 1)
+    
+    
+    alternative <- match.arg(alternative)
+    distr <- match.arg(distr)
+    if(length(se) == 1) se <- rep(se, length(thetahat))
     
     n <- length(thetahat)
     m <- length(mu)
     if(alternative != "none"){
         z <- (thetahat - mu) / sqrt(se^2 * phi)
         zH2 <- sum(sqrt(w))^2 / sum(w / z^2)
-        res <- pf(zH2, df1 = 1, df2 = (length(thetahat)-1), lower.tail = FALSE)
-        ## res <- pchisq(zH2, df = 1, lower.tail = FALSE)
+        if(distr == "chisq"){
+            res <- pchisq(zH2, df = 1, lower.tail = FALSE)
+        } else if(distr == "f") {
+            res <- pf(zH2, df1 = 1, df2 = (length(thetahat) - 1), lower.tail = FALSE)
+        }
         check_greater <- min(z) >= 0
         check_less <- max(z) <= 0
         break_p <- 1 / (2^n)
         if(alternative == "greater"){
-            if(bound)
+            if(bound){
                 res <- if(check_greater) res / (2^n) else paste(">", format(break_p, scientific = FALSE))
-            else
+            } else {
                 res <- if(check_greater || check_less) res/(2^n) else NaN
+            }
         }
         if(alternative == "less"){
-            if(bound)
+            if(bound){
                 res <- if(check_less) res / (2^n) else paste(">", format(break_p, scientific = FALSE))
-            else
+            } else {
                 res <- if(check_greater || check_less) res / (2^n) else NaN
+            }
         }
         if(alternative == "two.sided"){
-            if(bound)
+            if(bound){
                 res <- if(check_greater || check_less) res / (2^(n - 1)) else
                              paste(">", format(2*break_p, scientific = FALSE))
-            else
+            } else {
                 res <- if(check_greater || check_less) res / (2^(n - 1)) else NaN
+            }
         }
-    }
-    if(alternative == "none"){
+    } else if(alternative == "none") {
         zH2 <- numeric(m)
         sw <- sum(sqrt(w))^2
         for(i in 1:m){
             z <- (thetahat - mu[i]) / sqrt(se^2 * phi)
             zH2[i] <-  sw / sum(w / z^2)
         }
-        res <- pf(zH2, df1 = 1, df2 = (length(thetahat)-1), lower.tail = FALSE)
-##        res <- pchisq(q = zH2, df = 1, lower.tail = FALSE)
-    }    
+        if(distr == "chisq"){
+            res <- pchisq(q = zH2, df = 1, lower.tail = FALSE)
+        } else if(distr == "f") {
+            res <- pf(zH2, df1 = 1, df2 = (length(thetahat)-1), lower.tail = FALSE)
+        }
+    }
     return(res)
 }
 
@@ -105,11 +127,14 @@ hMeanChiSqMuPhi <- function(thetahat, se, w = rep(1, length(thetahat)), mu = 0,
 #' @import stats
 hMeanChiSqPhiCI <- function(thetahat, se, w = rep(1, length(thetahat)), phi = 1, 
                          alternative = c("two.sided", "greater", "less", "none"),
+                         distr = c("chisq", "f"),
                          level = 0.95, wGamma = rep(1, length(unique(thetahat)) - 1)){
+    
     stopifnot(is.numeric(thetahat),
               length(thetahat) > 0,
-              is.finite(thetahat))
-    stopifnot(is.numeric(se),
+              is.finite(thetahat),
+              
+              is.numeric(se),
               length(se) == 1 || length(se) == length(thetahat),
               is.finite(se),
               min(se) > 0,
@@ -118,31 +143,35 @@ hMeanChiSqPhiCI <- function(thetahat, se, w = rep(1, length(thetahat)), phi = 1,
               length(w) == length(thetahat),
               is.finite(w),
               min(w) > 0,
-
-              !is.null(alternative))
-    alternative <- match.arg(alternative)
-    
-    stopifnot(is.numeric(level),
+              
+              !is.null(alternative),
+              length(alternative) == 1,
+              
+              is.numeric(level),
               length(level) == 1,
               is.finite(level),
-              0 < level, level < 1,
-
+              level > 0 & level < 1,
+              
               is.numeric(wGamma),
-              length(wGamma) == length(unique(thetahat)) -1,
-              is.finite(w),
-              min(w) > 0)
+              length(wGamma) == length(unique(thetahat)) - 1,
+              
+              length(distr) == 1)
+    
+    alternative <- match.arg(alternative)
+    distr <- match.arg(distr)
+    if(length(se) == 1L) se <- rep(se, length(thetahat))
 
     ## target function to compute the limits of the CI
     target <- function(limit){
         hMeanChiSqMuPhi(thetahat = thetahat, se = se, w = w, mu = limit, phi = phi,
-                     alternative = alternative, bound = FALSE) - alpha
+                     alternative = alternative, distr = distr, bound = FALSE) - alpha
     }
 
     ## sort 'thetahat', 'se', 'w'
     indOrd <- order(thetahat)
     thetahat <- thetahat[indOrd]; se <- se[indOrd]; w <- w[indOrd]
 
-    ## minima are only search between distinct thetahat elements
+    ## minima are only searched between distinct thetahat elements
     thetahatUnique <- unique(thetahat)
     nThetahatUnique <- length(thetahatUnique)
     
@@ -161,19 +190,19 @@ hMeanChiSqPhiCI <- function(thetahat, se, w = rep(1, length(thetahat)), phi = 1,
         ## ----------------------------
         ## find lower bound such that: lower < thetahat[1] AND target(lower) < 0 
         lower <- mint - z1 * minse
-        while(target(lower) > 0)
+        while(target(lower) > 0){
             lower <- lower - minse
-        
+        }
         ## find root between 'lower' and 'thetahat[1]'
         CIlower <- uniroot(f = target, lower = lower, upper = thetahat[1])$root
         
         ## -------------------------
         ## check between thetahats whether 'target' goes below 'alpha'
         ## if so, search CI limits
-        CImiddle <- matrix(NA, nrow = 2, ncol = nThetahatUnique - 1)
-        gam <- matrix(NA, nrow = nThetahatUnique - 1, ncol = 2)
+        CImiddle <- matrix(NA_real_, nrow = 2, ncol = nThetahatUnique - 1)
+        gam <- matrix(NA_real_, nrow = nThetahatUnique - 1, ncol = 2)
         colnames(gam) <- c("minimum", "pvalue_fun/gamma")
-        for(i in 1:(nThetahatUnique - 1)){
+        for(i in seq_len(nThetahatUnique - 1)){
             opt <- optimize(f = target, lower = thetahatUnique[i],
                             upper = thetahatUnique[i + 1])
                 gam[i,] <- c(opt$minimum, opt$objective + alpha)
@@ -190,9 +219,9 @@ hMeanChiSqPhiCI <- function(thetahat, se, w = rep(1, length(thetahat)), phi = 1,
         ## find upper bound such that:
         ## upper > thetahat[length(thetahat)] AND target(upper) < 0 
         upper <- maxt + maxse
-        while(target(upper) > 0)
+        while(target(upper) > 0){
             upper <- upper + z1 * maxse
-        
+        }
         ## find root between 'lower' and 'thetahat[1]'
         CIupper <- uniroot(f = target, lower = thetahat[length(thetahat)],
                            upper = upper)$root
@@ -251,14 +280,20 @@ hMeanChiSqPhiCI <- function(thetahat, se, w = rep(1, length(thetahat)), phi = 1,
 #' thetahat[1] <- 7
 #' estimatePhi(thetahat = thetahat, se = se)
 estimatePhi <- function(thetahat, se){
-    n <- length(thetahat)
-    X2 <- vapply(seq_len(n), function(i){
-        Z <- matrix((thetahat[-i] - thetahat[i]), nrow = 1)
-        Sigma <- matrix(se[i]^2, nrow = n - 1, ncol = n - 1)
-        diag(Sigma) <- se[-i]^2 + se[i]^2
-        return( (n-1)^2 / ( (1/Z) %*% Sigma %*% t(1/Z) ) )
-    }, double(1L))
-    return(weighted.mean(x=X2, w=1/se^2))
+    stopifnot(is.numeric(thetahat),
+              length(thetahat) > 0,
+              is.finite(thetahat),
+              is.numeric(se),
+              length(se) == 1 || length(se) == length(thetahat),
+              is.finite(se),
+              min(se) > 0)
+    
+    m <- lm(thetahat ~ 1, weights = 1 / se^2)
+    mse <- anova(m)$`Mean Sq`[1]
+    ## corresponds to:
+    ## mse <- sum(summary(m)$residuals^2) / (length(thetahat) - 1)
+    ## max(1, mse) Ignore truncation at this point
+    return(mse)
 }
 
 
@@ -269,11 +304,13 @@ estimatePhi <- function(thetahat, se){
 #' hMeanChiSqCIphi(runif(13), runif(13), alternative="none")
 hMeanChiSqCIphi <- function(thetahat, se, w = rep(1, length(thetahat)), 
                             alternative = c("two.sided", "greater", "less", "none"),
+                            distr = c("chisq", "f"),
                             level = 0.95, wGamma = rep(1, length(unique(thetahat)) - 1)){
-    phi <- estimatePhi(thetahat=thetahat, se=se)
-    hMeanChiSqPhiCI(thetahat = thetahat, se = se, w = w,
-                    alternative = alternative,
-                    level = level, wGamma = wGamma, phi=phi)
+    
+    phi <- estimatePhi(thetahat = thetahat, se = se)
+    hMeanChiSqPhiCI(thetahat = thetahat, se = se, w = w, phi = phi, 
+                    alternative = alternative, distr = distr,
+                    level = level, wGamma = wGamma)
 }
 
 
@@ -281,7 +318,7 @@ hMeanChiSqCIphi <- function(thetahat, se, w = rep(1, length(thetahat)),
 #' @param thetahat Numeric vector of parameter estimates. 
 #' @param se Numeric vector of standard errors.
 #' @param mu The null hypothesis value. Defaults to 0.
-#' @param tau2 Between-study variance tau^2. Can be estmated, e.g., by
+#' @param tau2 Between-study variance tau^2. Can be estimated, e.g., by
 #' \code{\link[meta]{metagen}}. Defaults to 0.
 #' @return \code{hMeanChiSqMu}: returns the p-value from the harmonic mean chi-squared test
 #' based on study-specific estimates and standard errors.
@@ -296,9 +333,11 @@ hMeanChiSqCIphi <- function(thetahat, se, w = rep(1, length(thetahat)),
 #'              mu = -0.1)
 #' @export
 hMeanChiSqMu <- function(thetahat, se, w = rep(1, length(thetahat)), mu = 0,
-                         tau2 = 0,
+                         tau2,
+                         distr = c("chisq", "f"),
                          alternative = c("greater", "less", "two.sided", "none"),
                          bound = FALSE){
+    
     stopifnot(is.numeric(thetahat),
               length(thetahat) > 0,
               is.finite(thetahat),
@@ -322,19 +361,27 @@ hMeanChiSqMu <- function(thetahat, se, w = rep(1, length(thetahat)), mu = 0,
               is.finite(tau2),
               0 <= tau2,
               
-              !is.null(alternative))
-    alternative <- match.arg(alternative)
-    stopifnot(is.logical(bound),
+              is.logical(bound),
               length(bound) == 1,
-              is.finite(bound))
+              is.finite(bound),
+              
+              !is.null(alternative),
+              length(alternative) == 1,
+              
+              length(distr) == 1)
+    
+    alternative <- match.arg(alternative)
     
     n <- length(thetahat)
     m <- length(mu)
     if(alternative != "none"){
         z <- (thetahat - mu) / sqrt(se^2 + tau2)
         zH2 <- sum(sqrt(w))^2 / sum(w / z^2)
-##        res <- pf(zH2, df1 = 1, df2 = (length(thetahat)-1), lower.tail = FALSE)
-        res <- pchisq(zH2, df = 1, lower.tail = FALSE)
+        if(distr == "chisq"){
+            res <- pchisq(zH2, df = 1, lower.tail = FALSE)
+        } else {
+            res <- pf(zH2, df1 = 1, df2 = (length(thetahat)-1), lower.tail = FALSE)
+        }
         check_greater <- min(z) >= 0
         check_less <- max(z) <= 0
         break_p <- 1 / (2^n)
@@ -357,16 +404,18 @@ hMeanChiSqMu <- function(thetahat, se, w = rep(1, length(thetahat)), mu = 0,
             else
                 res <- if(check_greater || check_less) res / (2^(n - 1)) else NaN
         }
-    }
-    if(alternative == "none"){
+    } else if(alternative == "none"){
         zH2 <- numeric(m)
         sw <- sum(sqrt(w))^2
         for(i in 1:m){
             z <- (thetahat - mu[i]) / sqrt(se^2 + tau2)
             zH2[i] <-  sw / sum(w / z^2)
         }
-##        res <- pf(zH2, df1 = 1, df2 = (length(thetahat)-1), lower.tail = FALSE)
-        res <- pchisq(q = zH2, df = 1, lower.tail = FALSE)
+        if(distr == "chisq"){
+            res <- pchisq(q = zH2, df = 1, lower.tail = FALSE)
+        } else if(distr == "f") {
+            res <- pf(zH2, df1 = 1, df2 = (length(thetahat) - 1), lower.tail = FALSE)
+        }
     }    
     return(res)
 }
@@ -425,42 +474,48 @@ hMeanChiSqMu <- function(thetahat, se, w = rep(1, length(thetahat)), mu = 0,
 #' @import stats
 hMeanChiSqCI <- function(thetahat, se, w = rep(1, length(thetahat)), tau2 = 0, 
                          alternative = c("two.sided", "greater", "less", "none"),
-                         level = 0.95, wGamma = rep(1, length(unique(thetahat)) - 1)){
+                         level = 0.95, wGamma = rep(1, length(unique(thetahat)) - 1),
+                         distr = c("chisq", "f")){
+    
     stopifnot(is.numeric(thetahat),
               length(thetahat) > 0,
-              is.finite(thetahat))
-    stopifnot(is.numeric(se),
+              is.finite(thetahat),
+              
+              is.numeric(se),
               length(se) == 1 || length(se) == length(thetahat),
               is.finite(se),
               min(se) > 0,
 
+              is.numeric(w),
+              length(w) == length(thetahat),
+              is.finite(w),
+              min(w) > 0,
+              
               is.numeric(tau2),
               length(tau2) == 1,
               is.finite(tau2),
               0 <= tau2,
               
-              is.numeric(w),
-              length(w) == length(thetahat),
-              is.finite(w),
-              min(w) > 0,
-
-              !is.null(alternative))
-    alternative <- match.arg(alternative)
-    
-    stopifnot(is.numeric(level),
+              !is.null(alternative),
+              length(alternative) == 1,
+              
+              is.numeric(level),
               length(level) == 1,
               is.finite(level),
-              0 < level, level < 1,
+              level > 0 & level < 1,
 
               is.numeric(wGamma),
               length(wGamma) == length(unique(thetahat)) -1,
-              is.finite(w),
-              min(w) > 0)
+              
+              length(distr) == 1)
+    
+    alternative <- match.arg(alternative)
+    distr <- match.arg(distr)
 
     ## target function to compute the limits of the CI
     target <- function(limit){
         hMeanChiSqMu(thetahat = thetahat, se = se, w = w, mu = limit, tau2 = tau2,
-                     alternative = alternative, bound = FALSE) - alpha
+                     distr = distr, alternative = alternative, bound = FALSE) - alpha
     }
 
     ## sort 'thetahat', 'se', 'w'
@@ -495,8 +550,8 @@ hMeanChiSqCI <- function(thetahat, se, w = rep(1, length(thetahat)), tau2 = 0,
         ## -------------------------
         ## check between thetahats whether 'target' goes below 'alpha'
         ## if so, search CI limits
-        CImiddle <- matrix(NA, nrow = 2, ncol = nThetahatUnique - 1)
-        gam <- matrix(NA, nrow = nThetahatUnique - 1, ncol = 2)
+        CImiddle <- matrix(NA_real_, nrow = 2, ncol = nThetahatUnique - 1)
+        gam <- matrix(NA_real_, nrow = nThetahatUnique - 1, ncol = 2)
         colnames(gam) <- c("minimum", "pvalue_fun/gamma")
         for(i in 1:(nThetahatUnique - 1)){
             opt <- optimize(f = target, lower = thetahatUnique[i],
@@ -515,9 +570,9 @@ hMeanChiSqCI <- function(thetahat, se, w = rep(1, length(thetahat)), tau2 = 0,
         ## find upper bound such that:
         ## upper > thetahat[length(thetahat)] AND target(upper) < 0 
         upper <- maxt + maxse
-        while(target(upper) > 0)
+        while(target(upper) > 0){
             upper <- upper + z1 * maxse
-        
+        }
         ## find root between 'lower' and 'thetahat[1]'
         CIupper <- uniroot(f = target, lower = thetahat[length(thetahat)],
                            upper = upper)$root
@@ -550,7 +605,7 @@ hMeanChiSqCI <- function(thetahat, se, w = rep(1, length(thetahat)), tau2 = 0,
                          upper = maxt + factor * z1 * maxse)$root
         return(list(CI = cbind(lower, upper)))
     }
-    stop("function not get here.")
+    stop("Function should not get here.")
 }
 
 
