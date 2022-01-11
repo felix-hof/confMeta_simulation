@@ -5,13 +5,18 @@ library(tidyverse); theme_set(theme_bw())
 
 load(paste0("RData/simulate_all.RData"))
 
+out <- out %>% 
+    bind_rows() #%>%
+    # mutate(interval = ifelse(grepl("CI", method), "CI", "PI"),
+    #        method = gsub("\\s*CI|\\s*PI", "", method))
+
 #' Helper function to plot means
 #' @param data obtained by simulate_all.R and saved in RData/simulate_all.RData
 #' @param measure CI measure to plot
 #' @param by make facets based on "method" or "I2".
 plotPanels <- function(data,
-                       measure = c("width", "coverage", "coverage_effects",
-                                   "score", "n"),
+                       measure = c("coverage_true", "coverage_effects", 
+                                   "coverage_prediction", "n", "width", "score"),
                        by = c("method", "I2")){
     measure <- match.arg(measure)
     by <- match.arg(by)
@@ -19,8 +24,9 @@ plotPanels <- function(data,
         mutate(k = factor(k),
                I2 = factor(I2)) -> data
     if(measure == "n")
-        data <- data[data$method %in% c("Harmonic Mean", "Harmonic Mean Additive",
-                                        "Harmonic Mean Multiplicative"), ]
+        data <- data[grepl("Harmonic Mean", data$method), ]
+        # data <- data[data$method %in% c("Harmonic Mean", "Harmonic Mean Additive",
+        #                                 "Harmonic Mean Multiplicative"), ]
     if(by == "method")
         data %>% mutate(method = paste(method)) %>%
             ggplot(mapping = aes(x = k, y = value, color = I2)) +
@@ -53,27 +59,28 @@ plotPanels <- function(data,
 
 ## Mean plots ---------------------------------------------------------------------
 
-out %>% 
-    bind_rows() -> out2
+
 
 ## 4.1
 dir.create("figs", showWarnings = FALSE)
 dir.create("figs/meanplots", showWarnings = FALSE)
-out2 %>%
-    filter(method != "Harmonic Mean two sided",
-           grepl("_mean", measure), !grepl("gammaMin", measure)) %>%
-    mutate(method = ifelse(method == "REML", "Random Effects, default, REML", method),
-           measure = gsub("_mean", "", measure)) -> out2
+out2 <- out %>%
+    filter(!grepl("two sided", method),
+           grepl("_mean$", measure), !grepl("gammaMin", measure)) %>%
+    mutate(method = ifelse(grepl("REML", method), gsub("REML", "Random Effects, default, REML", method), method),
+           measure = gsub("_mean$", "", measure))
 
 out2 %>% select(measure) %>% unique() %>% pull() -> measure
 out2 %>% select(dist) %>% unique() %>% pull() -> dist 
 out2 %>% select(bias) %>% unique() %>% pull() -> bias 
 out2 %>% select(large) %>% unique() %>% pull() -> large 
-out2 %>% select(heterogeneity) %>% unique() %>% pull() -> heterogeneity 
+out2 %>% select(heterogeneity) %>% unique() %>% pull() -> heterogeneity
+#out2 %>% select(interval) %>% unique() %>% pull() -> interval
 
 grid <- expand.grid(measure = measure, dist = dist, bias = bias, large = large, 
-                    heterogeneity = heterogeneity, stringsAsFactors = FALSE) %>% 
-    filter(!(measure == "coverage_effects" & heterogeneity == "multiplicative"))
+                    heterogeneity = heterogeneity, 
+                    #interval = interval, 
+                    stringsAsFactors = FALSE)
 
 
 
@@ -84,22 +91,34 @@ for(i in 1:nrow(grid)){
                           grid[i, "dist"],
                           "_large_", grid[i, "large"],
                           "_bias_", grid[i, "bias"],
-                          "_sim-mod_", grid[i, "heterogeneity"], 
+                          "_sim-mod_", grid[i, "heterogeneity"],
+                          #"_", grid[i, "interval"],
                           "_", grid[i, "measure"], ".png")
     out2[out2$dist == grid[i, "dist"] &
              out2$measure == grid[i, "measure"] &
              out2$bias == grid[i, "bias"] &
+             #out2$interval == grid[i, "interval"] &
              out2$large == grid[i, "large"] &
              out2$heterogeneity == grid[i, "heterogeneity"], ] %>%
+        {
+            if(grid[i, "measure"] == "coverage_prediction"){
+                .[] %>% 
+                    filter(grepl("Harmonic Mean|PI", method))
+            } else {
+                .[] %>% 
+                    filter(!grepl("PI", method))
+            }
+        } %>% 
         plotPanels(data=., measure = grid[i, "measure"], by="method") +
         ggtitle(paste0("dist: ", grid[i, "dist"],
                        ", bias: ", grid[i, "bias"],
                        ", theta: 0.2, no. of large studies: ", grid[i, "large"],
+                       #"interval: ", grid[i, "bias"],
                        ", simulation model: ", grid[i, "heterogeneity"], sep="")) +
         theme(plot.title = element_text(size = 10))
     ggsave(filename = single_plots[i],
-           width = 7,
-           height = 6,
+           width = 12,
+           height = 12,
            units = "in")
 }
 
@@ -134,7 +153,7 @@ for(di in dist)
                                   "_sim-mod_", he,
                                   "_", me, ".png",
                                   " +append ",
-                                  "figs/meanplots//BIAS",
+                                  "figs/meanplots/BIAS",
                                   "_", di,
                                   "_large_", la,
                                   "_sim-mod_", he,
@@ -243,9 +262,7 @@ dir.create("figs/min_pH", showWarnings = FALSE)
 out2 <- out %>% 
     bind_rows() %>%
     filter(grepl("gammaMin", measure), 
-           method %in% c("Harmonic Mean", 
-                         "Harmonic Mean Additive", 
-                         "Harmonic Mean Multiplicative")) %>% 
+           grepl("Harmonic Mean|Harmonic Mean Additive|Harmonic Mean Multiplicative", method)) %>% 
     distinct() %>% 
     mutate(measure = gsub("^gammaMin_", "", measure),
            measure = case_when(measure == "min" ~ "Minimum",
