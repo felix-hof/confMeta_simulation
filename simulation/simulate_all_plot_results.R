@@ -262,9 +262,7 @@ dir.create("figs/min_pH", showWarnings = FALSE)
 out2 <- out %>% 
     bind_rows() %>%
     filter(grepl("gammaMin", measure), 
-           method %in% c("Harmonic Mean", 
-                         "Harmonic Mean Additive", 
-                         "Harmonic Mean Multiplicative")) %>% 
+           grepl("Harmonic Mean|Harmonic Mean Additive|Harmonic Mean Multiplicative", method)) %>% 
     distinct() %>% 
     mutate(measure = gsub("^gammaMin_", "", measure),
            measure = case_when(measure == "min" ~ "Minimum",
