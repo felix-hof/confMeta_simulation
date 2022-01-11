@@ -597,7 +597,7 @@ sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time
 grid <- expand.grid(sampleSize = 50,                                 # sample size of trial
                     effect = 0.2,                                    # average effect, impacts selection bias
                     I2 = c(0, 0.3, 0.6, 0.9),                        # Higgin's I^2 heterogeneity measure
-                    k = c(3, 5, 10, 20),                             # number of studies
+                    k = c(3, 5, 10, 20, 50),                         # number of studies
                     heterogeneity = c("additive", "multiplicative"), # The heterogeneity model that the studies are simulated from
                     dist = c("Gaussian", "t"),                       # distribution 
                     bias = c("none", "moderate", "strong"),          # bias
