@@ -50,7 +50,7 @@ The following object is masked from ‘package:stats’:
 
     sd
 
-0.935 sec elapsed
+0.932 sec elapsed
 R version 4.0.2 (2020-06-22)
 Platform: x86_64-pc-linux-gnu (64-bit)
 Running under: Ubuntu 18.04.6 LTS
