@@ -237,17 +237,17 @@ simREbias <- function(k, sampleSize, effect, I2,
 sim2CIs <- function(x){
     ## Henmi & Copas confidence Interval
     HC <- metafor::hc(object = metafor::rma(yi = x[, "theta"], sei = x[, "se"], 
-                                            control = list(maxiter = 1000, stepadj = 0.5)))
+                                            control = list(maxiter = 10000, stepadj = 0.25)))
     
     ## standard metagen with REML estimation of tau
     REML <- metagen(TE = x[, "theta"], seTE = x[, "se"], sm = "MD", 
                     method.tau = "REML", 
-                    control = list(maxiter = 1000, stepadj = 0.5))
+                    control = list(maxiter = 10000, stepadj = 0.25))
     
     ## Hartung & Knapp
     HK <- metagen(TE = x[, "theta"], seTE = x[, "se"], sm = "MD", 
                   method.tau = "REML", hakn = TRUE,
-                  control = list(maxiter = 1000, stepadj = 0.5))
+                  control = list(maxiter = 10000, stepadj = 0.25))
     
     ## HMean2sided
     if(nrow(x) <= 5) {
