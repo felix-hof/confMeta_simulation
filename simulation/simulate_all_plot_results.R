@@ -1,8 +1,10 @@
 ## create figures from simulation output
 
+# load libraries
 rm(list = ls())
 library(tidyverse); theme_set(theme_bw())
 
+# Start actual work
 load(paste0("RData/simulate_all.RData"))
 
 out <- out %>%
@@ -20,13 +22,12 @@ plotPanels <- function(data,
     by <- match.arg(by)
     data[data$measure == measure, ] %>%
         mutate(k = factor(k),
-               I2 = factor(I2)) -> data
-    if(measure == "n")
-        data <- data[grepl("Harmonic Mean", data$method), ]
-        # data <- data[data$method %in% c("Harmonic Mean", "Harmonic Mean Additive",
-        #                                 "Harmonic Mean Multiplicative"), ]
-    if(by == "method")
-        data %>% mutate(method = paste(method)) %>%
+               I2 = factor(I2)) -> data2
+    if(measure == "n"){
+        data2 <- data2[grepl("Harmonic Mean", data$method), ]
+    }
+    if(by == "method"){
+        data2 %>% mutate(method = paste(method)) %>%
             ggplot(mapping = aes(x = k, y = value, color = I2)) +
             facet_wrap(~ method) +
             geom_point() +
@@ -34,16 +35,18 @@ plotPanels <- function(data,
             scale_color_discrete(name = expression(I^2)) +
             xlab("# studies") +
             ylab(measure) -> p
-    if(by == "I2")
-        data %>% mutate(I2 = as.character(I2)) %>%
+    }
+    if(by == "I2"){
+        data2 %>% mutate(I2 = as.character(I2)) %>%
         ggplot(mapping = aes(x = k, y = value, color = method)) +
             facet_wrap(~ I2, labeller = label_bquote(I^2 == .(I2))) +
             geom_point() +
             stat_summary(fun="mean", geom="line", aes(group=method)) +
             xlab("# studies") +
             ylab(measure) -> p
+    }
 
-    if(str_detect(measure, "coverage")) {
+    if(str_detect(measure, "coverage")){
         p <- p +
             geom_hline(yintercept = 0.95, lty = 2, alpha = 0.5)
     }
@@ -119,7 +122,8 @@ for(i in 1:nrow(grid)){
     ggsave(filename = single_plots[i],
            width = 12,
            height = 12,
-           units = "in")
+           units = "in",
+           type = "cairo")
 }
 
 

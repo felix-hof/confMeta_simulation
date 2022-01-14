@@ -14,8 +14,10 @@ if [ -f "$FILE" ]; then
       cd simulation && 
       make && 
       cd .. &&
-      if [ ! -f "$FILE" ]; then
-        git add RData/* simulate_all.Rout &&
+      if [ ! -f "$FILE" ]; then /
+        git add simulation/RData/* simulation/simulate_all.Rout \
+		simulation/simulate_all_plot_results.Rout \
+		simulation/figs/* &&
         git commit -m "Push simulation results" &&
         git push
       fi
@@ -32,9 +34,12 @@ else
   cd simulation && 
   make && 
   cd .. &&
-  if [ ! -f "$FILE" ]; then
-    git add RData/* simulate_all.Rout &&
+  if [ ! -f "$FILE" ]; then / 
+    git add simulation/RData/* simulation/simulate_all.Rout \
+	simulation/simulate_all_plot_results.Rout \
+	simulation/figs/* &&
     git commit -m "Push simulation results" &&
     git push
   fi
 fi
+
