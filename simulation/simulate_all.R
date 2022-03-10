@@ -23,6 +23,7 @@
 rm(list = ls())
 library(meta)
 #source("ReplicationSuccess_extension_LH.R")
+library(hMean)
 library(tidyverse); theme_set(theme_bw())
 library(rlang)
 library(doParallel)
@@ -251,10 +252,10 @@ sim2CIs <- function(x){
     
     ## HMean2sided
     if(nrow(x) <= 5) {
-        HM2_f <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
+        HM2_f <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
                               alternative = "two.sided", distr = "f",
                               heterogeneity = "additive")
-        HM2_chisq <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
+        HM2_chisq <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
                                   alternative = "two.sided", distr = "chisq",
                                   heterogeneity = "additive")
     } else {
@@ -262,11 +263,15 @@ sim2CIs <- function(x){
         HM2_chisq <- list(CI = cbind(lower = NA_real_, upper = NA_real_))
     }
     
+    ## Note: these here are actually not really necessary anymore. In an earlier version, the
+    ## argument tau2 defaulted to 0 and the heterogeneity was always additive.
+    ## TODO: Check whether we should keep this.
+    
     ## HMeanNone
-    HM_f <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
+    HM_f <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
                          alternative = "none", distr = "f",
                          heterogeneity = "additive")
-    HM_chisq <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
+    HM_chisq <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
                              alternative = "none", distr = "chisq",
                              heterogeneity = "additive")
     
