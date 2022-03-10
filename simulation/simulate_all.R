@@ -22,7 +22,7 @@
 ## Florian Gerber, florian.gerber@uzh.ch, Oct. 14, 2021
 rm(list = ls())
 library(meta)
-source("ReplicationSuccess_extension_LH.R")
+#source("ReplicationSuccess_extension_LH.R")
 library(tidyverse); theme_set(theme_bw())
 library(rlang)
 library(doParallel)
@@ -252,9 +252,11 @@ sim2CIs <- function(x){
     ## HMean2sided
     if(nrow(x) <= 5) {
         HM2_f <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
-                              alternative = "two.sided", distr = "f")
+                              alternative = "two.sided", distr = "f",
+                              heterogeneity = "additive")
         HM2_chisq <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
-                                  alternative = "two.sided", distr = "chisq")
+                                  alternative = "two.sided", distr = "chisq",
+                                  heterogeneity = "additive")
     } else {
         HM2_f <- list(CI = cbind(lower = NA_real_, upper = NA_real_))
         HM2_chisq <- list(CI = cbind(lower = NA_real_, upper = NA_real_))
@@ -262,21 +264,27 @@ sim2CIs <- function(x){
     
     ## HMeanNone
     HM_f <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
-                         alternative = "none", distr = "f")
+                         alternative = "none", distr = "f",
+                         heterogeneity = "additive")
     HM_chisq <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
-                             alternative = "none", distr = "chisq")
+                             alternative = "none", distr = "chisq",
+                             heterogeneity = "additive")
     
     ## HMeanNone_tau2
     HM_tau2_f <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
-                              tau2 = REML$tau2, alternative = "none", distr = "f")
+                              tau2 = REML$tau2, alternative = "none", distr = "f",
+                              heterogeneity = "additive")
     HM_tau2_chisq <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
-                                  tau2 = REML$tau2, alternative = "none", distr = "chisq")
+                                  tau2 = REML$tau2, alternative = "none", distr = "chisq",
+                                  heterogeneity = "additive")
     
     ## HMeanNone_phi
-    HM_phi_f <- hMeanChiSqCIphi(thetahat = x[, "theta"], se = x[, "se"], 
-                                alternative = "none", distr = "f")
-    HM_phi_chisq <- hMeanChiSqCIphi(thetahat = x[, "theta"], se = x[, "se"], 
-                                    alternative = "none", distr = "chisq")
+    HM_phi_f <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
+                             alternative = "none", distr = "f", 
+                             heterogeneity = "multiplicative")
+    HM_phi_chisq <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
+                                 alternative = "none", distr = "chisq", 
+                                 heterogeneity = "multiplicative")
     
     tib <- tibble(lower = c(HC$ci.lb,
                             REML$lower.random,
