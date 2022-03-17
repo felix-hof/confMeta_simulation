@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := figs
 
-RData/simulate_all.RData: simulate_all.R ReplicationSuccess_extension_LH.R
+RData/simulate_all.RData: simulate_all.R
 	Rscript install_packages.R && Rscript simulate_all.R > simulate_all.Rout 2>&1
 
 figs: RData/simulate_all.RData
