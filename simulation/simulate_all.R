@@ -22,7 +22,8 @@
 ## Florian Gerber, florian.gerber@uzh.ch, Oct. 14, 2021
 rm(list = ls())
 library(meta)
-source("ReplicationSuccess_extension_LH.R")
+#source("ReplicationSuccess_extension_LH.R")
+library(hMean)
 library(tidyverse); theme_set(theme_bw())
 library(rlang)
 library(doParallel)
@@ -67,19 +68,17 @@ simRE <- function(k, sampleSize, effect, I2,
         if(dist == "t") {
             ## the sn::rst(xi=0, omega, nu) distribution has variance
             ## omega^2 nu/(nu-2) (if nu>2)
-            ## where nu is the degrefees of freedom (dof).
+            ## where nu is the degrees of freedom (dof).
             ## So if we want the variance to be tau^2, then 
             ## omega^2 = tau^2 * (nu-2)/nu
             ## We use nu=4 dof then omega^2 = tau^2/2, so half as
-            ## large as the heterogeneity variance under normality. 
+            ## large as the heterogeneity variance under normality.
             delta <- rst(n = k, xi = effect, omega = sqrt(tau2/2), nu = 4)
         } else {
             delta <- rnorm(n = k, mean = effect, sd = sqrt(tau2))
         }
         theta <- rnorm(n = k, mean = delta, sd = sqrt(2/n))
-        ## theta[1:ceiling(r*k)] <- theta[1:ceiling(r*k)] + bias
-        se <- sqrt(rchisq(n = k, df = 2*n - 2) / (n*(n - 1)))
-        o <- cbind("theta" = theta, "se" = se, "delta" = delta)
+        
     } else { ## multiplicative model
         phi <- 1/(1 - I2)
         if(dist == "t") {
@@ -95,12 +94,12 @@ simRE <- function(k, sampleSize, effect, I2,
             delta <- rst(n = k, xi = effect, omega = sqrt((phi-1)/n), nu = 4)
             theta <- rnorm(n = k, mean = delta, sd = sqrt(2/n))
         } else {  ## Gaussian, sample directly from marginal
-            theta <- rnorm(n = k, mean = effect, sd = sqrt(phi*2/n))
+            delta <- rnorm(n = k, mean = effect, sd = 2/n*(phi - 1))
+            theta <- rnorm(n = k, mean = delta, sd = sqrt(2/n))
         }
-        ## theta[1:ceiling(r*k)] <- theta[1:ceiling(r*k)] + bias
-        se <- sqrt(rchisq(n = k, df = 2*n - 2) / (n*(n - 1)))
-        o <- cbind("theta" = theta, "se" = se, "delta" = NA_real_)
     }
+    se <- sqrt(rchisq(n = k, df = 2*n - 2) / (n*(n - 1)))
+    o <- cbind("theta" = theta, "se" = se, "delta" = delta)
     rownames(o) <- NULL
     return(o)
 }
@@ -237,67 +236,111 @@ simREbias <- function(k, sampleSize, effect, I2,
 #' @param x matrix output from \code{simRE}.
 #' @return a tibble with columns \code{lower}, \code{upper}, and \code{method}.
 sim2CIs <- function(x){
-    ## Henmy & Copas confidence Interval
+    ## Henmi & Copas confidence Interval
     HC <- metafor::hc(object = metafor::rma(yi = x[, "theta"], sei = x[, "se"], 
-                                            control = list(maxiter = 1000, stepadj = 0.5)))
-
+                                            control = list(maxiter = 10000, stepadj = 0.25)))
+    
     ## standard metagen with REML estimation of tau
     REML <- metagen(TE = x[, "theta"], seTE = x[, "se"], sm = "MD", 
                     method.tau = "REML", 
-                    control = list(maxiter = 1000, stepadj = 0.5))
-
+                    control = list(maxiter = 10000, stepadj = 0.25))
+    
     ## Hartung & Knapp
     HK <- metagen(TE = x[, "theta"], seTE = x[, "se"], sm = "MD", 
                   method.tau = "REML", hakn = TRUE,
-                  control = list(maxiter = 1000, stepadj = 0.5))
-
+                  control = list(maxiter = 10000, stepadj = 0.25))
+    
     ## HMean2sided
     if(nrow(x) <= 5) {
-        HM2 <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
-                            alternative = "two.sided")
+        HM2_f <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
+                              alternative = "two.sided", distr = "f",
+                              heterogeneity = "additive")
+        HM2_chisq <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
+                                  alternative = "two.sided", distr = "chisq",
+                                  heterogeneity = "additive")
     } else {
-        HM2 <- list(CI = cbind(lower = NA_real_, upper = NA_real_))
+        HM2_f <- list(CI = cbind(lower = NA_real_, upper = NA_real_))
+        HM2_chisq <- list(CI = cbind(lower = NA_real_, upper = NA_real_))
     }
-
+    
+    ## Note: these here are actually not really necessary anymore. In an earlier version, the
+    ## argument tau2 defaulted to 0 and the heterogeneity was always additive.
+    ## TODO: Check whether we should keep this.
+    
     ## HMeanNone
-    HM <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
-                       alternative = "none")
-
+    HM_f <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
+                         alternative = "none", distr = "f",
+                         heterogeneity = "additive")
+    HM_chisq <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
+                             alternative = "none", distr = "chisq",
+                             heterogeneity = "additive")
+    
     ## HMeanNone_tau2
-    HM_tau2 <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
-                           tau2 = REML$tau2, alternative = "none")
-
+    HM_tau2_f <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
+                              tau2 = REML$tau2, alternative = "none", distr = "f",
+                              heterogeneity = "additive")
+    HM_tau2_chisq <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
+                                  tau2 = REML$tau2, alternative = "none", distr = "chisq",
+                                  heterogeneity = "additive")
+    
     ## HMeanNone_phi
-    HM_phi <- hMeanChiSqCIphi(thetahat = x[, "theta"], se = x[, "se"], 
-                               alternative = "none")
+    HM_phi_f <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
+                             alternative = "none", distr = "f", 
+                             heterogeneity = "multiplicative")
+    HM_phi_chisq <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
+                                 alternative = "none", distr = "chisq", 
+                                 heterogeneity = "multiplicative")
     
     tib <- tibble(lower = c(HC$ci.lb,
                             REML$lower.random,
+                            REML$lower.predict,
                             HK$lower.random,
-                            HM2$CI[,"lower"], 
-                            HM$CI[,"lower"],
-                            HM_tau2$CI[,"lower"],
-                            HM_phi$CI[,"lower"]),
+                            HK$lower.predict,
+                            HM2_chisq$CI[,"lower"],
+                            HM2_f$CI[,"lower"],
+                            HM_chisq$CI[,"lower"],
+                            HM_f$CI[,"lower"],
+                            HM_tau2_chisq$CI[,"lower"],
+                            HM_tau2_f$CI[,"lower"],
+                            HM_phi_chisq$CI[,"lower"],
+                            HM_phi_f$CI[,"lower"]),
                   upper = c(HC$ci.ub,
                             REML$upper.random,
+                            REML$upper.predict,
                             HK$upper.random,
-                            HM2$CI[,"upper"], 
-                            HM$CI[,"upper"],
-                            HM_tau2$CI[,"upper"],
-                            HM_phi$CI[,"upper"]),
-                  method = c("Henmy & Copas",
-                             "REML",
-                             "Hartung & Knapp",
-                             "Harmonic Mean two sided",
-                             rep("Harmonic Mean", nrow(HM$CI)),
-                             rep("Harmonic Mean Additive", nrow(HM_tau2$CI)),
-                             rep("Harmonic Mean Multiplicative", nrow(HM_phi$CI))))
+                            HK$upper.predict,
+                            HM2_chisq$CI[,"upper"],
+                            HM2_f$CI[,"upper"],
+                            HM_chisq$CI[,"upper"],
+                            HM_f$CI[,"upper"],
+                            HM_tau2_chisq$CI[,"upper"],
+                            HM_tau2_f$CI[,"upper"],
+                            HM_phi_chisq$CI[,"upper"],
+                            HM_phi_f$CI[,"upper"]),
+                  method = c("Henmy & Copas CI",
+                             "REML CI",
+                             "REML PI", 
+                             "Hartung & Knapp CI",
+                             "Hartung & Knapp PI",
+                             "Harmonic Mean two sided CI (chisq)",
+                             "Harmonic Mean two sided CI (f)",
+                             rep("Harmonic Mean CI (chisq)", nrow(HM_chisq$CI)),
+                             rep("Harmonic Mean CI (f)", nrow(HM_f$CI)),
+                             rep("Harmonic Mean Additive CI (chisq)", nrow(HM_tau2_chisq$CI)),
+                             rep("Harmonic Mean Additive CI (f)", nrow(HM_tau2_f$CI)),
+                             rep("Harmonic Mean Multiplicative CI (chisq)", nrow(HM_phi_chisq$CI)),
+                             rep("Harmonic Mean Multiplicative CI (f)", nrow(HM_phi_f$CI))))
     out <- list(CIs = tib,
                 model = attributes(x)$heterogeneity,
-                gamma = tibble("method" = c("Harmonic Mean", "Harmonic Mean Additive", "Harmonic Mean Multiplicative"),
-                               "gamma_min" = c(min(HM$gamma[,2]), min(HM_tau2$gamma[,2]), min(HM_phi$gamma[,2])),
-                               "x_gamma_min" = c(HM$gamma[which.min(HM$gamma[,2]),1], HM_tau2$gamma[which.min(HM_tau2$gamma[,2]),1], 
-                                                 HM_phi$gamma[which.min(HM_phi$gamma[,2]),1])),
+                gamma = tibble("method" = c("Harmonic Mean CI (chisq)", "Harmonic Mean CI (f)", 
+                                            "Harmonic Mean Additive CI (chisq)", "Harmonic Mean Additive CI (f)", 
+                                            "Harmonic Mean Multiplicative CI (chisq)", "Harmonic Mean Multiplicative CI (f)"),
+                               "gamma_min" = c(min(HM_chisq$gamma[,2]), min(HM_f$gamma[,2]), 
+                                               min(HM_tau2_chisq$gamma[,2]), min(HM_tau2_f$gamma[,2]),
+                                               min(HM_phi_chisq$gamma[,2]), min(HM_phi_f$gamma[,2])),
+                               "x_gamma_min" = c(HM_chisq$gamma[which.min(HM_chisq$gamma[,2]),1], HM_f$gamma[which.min(HM_f$gamma[,2]),1],
+                                                 HM_tau2_chisq$gamma[which.min(HM_tau2_chisq$gamma[,2]),1], HM_tau2_f$gamma[which.min(HM_tau2_f$gamma[,2]),1],
+                                                 HM_phi_chisq$gamma[which.min(HM_phi_chisq$gamma[,2]),1], HM_phi_f$gamma[which.min(HM_phi_f$gamma[,2]),1])),
                 theta = x[, "theta"],
                 delta = x[, "delta"],
                 effect = attributes(x)$effect)
@@ -310,57 +353,68 @@ sim2CIs <- function(x){
 #'
 #' @param x a list with elements \code{CIs}, \code{model}, \code{gamma}, \code{theta}, 
 #' \code{delta} and \code{effect} as obtained from \code{sim2CIs}.
-#' @return a tibble with columns 
+#' @param pars a \code{data.frame} with one row. It should have column names \code{k}, \code{sampleSize}, \code{effect}, 
+#' \code{I2}, \code{heterogeneity}, \code{dist} and \code{large}. These are passed as parameters to
+#' \link{simREbias()}. In order to simulate another study in order to assess prediction interval coverage.
+#' @return a tibble with columns
 #' \item{\code{method}}{method}
 #' \item{\code{width}}{with of the intervals}
 #' \item{\code{coverage}}{covarage of the true value 0}
 #' \item{\code{score}}{interval score as defined in Gneiting and Raftery (2007)}
 #' \item{\code{coverage_effects}}{Proportion of study effects covered by the interval(s).}
 #' \item{\code{n}}{Number of intervals}
-CI2measures <- function(x) {
+CI2measures <- function(x, pars) {
     methods <- unique(x$CIs$method)
     foreach(i = seq_along(methods), .combine = rbind) %do% {
-        x$CIs %>% filter(method == methods[i]) %>%
+        
+        # Subset by method
+        x_sub <- x$CIs %>% filter(method == methods[i]) %>%
             select(lower, upper) %>%
-            as.matrix() ->
-            x_sub
+            as.matrix()
         
-        if(x$model == "additive"){
-            vapply(x$theta, function(theta){
-                any(x_sub[,"lower"] <= theta & theta <= x_sub[,"upper"])
-            }, logical(1L)) %>%
-                mean() ->
-                coverage_effects
-        } else {
-            coverage_effects <- NA_real_
-        }
+        # calculate whether simulated study effects are covered
+        coverage_effects <- vapply(x$delta, function(delta){
+            any(x_sub[,"lower"] <= delta & delta <= x_sub[,"upper"])
+        }, logical(1L)) %>%
+            mean()
+            
         
-        if(methods[i] %in% paste0("Harmonic Mean", c("", " Additive", " Multiplicative"))){
+        # calculate whether interval covers future study (only for hMean, hMean_additive, hMean_multiplicative)
+        new_study <- simREbias(k = 1, sampleSize = pars$sampleSize, effect = pars$effect, 
+                               I2 = pars$I2, heterogeneity = pars$heterogeneity, 
+                               dist = pars$dist, large = 0, bias = "none")[, "delta"]
+        coverage_prediction <- as.numeric(any(x_sub[,"lower"] <= new_study & new_study <= x_sub[,"upper"]))
+             
+        if(grepl("Harmonic Mean CI|Harmonic Mean Additive CI|Harmonic Mean Multiplicative CI", methods[i])){
             gamma_min <- x$gamma %>% filter(method == methods[i]) %>% pull(gamma_min)
         } else {
             gamma_min <- NA_real_
         }
 
-        { x_sub[,"upper"] - x_sub[,"lower"] } %>%
-            sum(.) ->
-            width
+        width <- {x_sub[,"upper"] - x_sub[,"lower"]} %>% sum(.)
         
-        as.numeric(any(x_sub[,"lower"] <= x$effect & x$effect <= x_sub[,"upper"])) ->
-            coverage
+        coverage_true <- as.numeric(any(x_sub[,"lower"] <= x$effect & x$effect <= x_sub[,"upper"]))
         
-        width + (2/0.05) * min(abs(x_sub[,"lower"]), abs(x_sub[,"upper"])) * (1 - coverage) ->
-            score
+        if(grepl("CI", methods[i])){
+            score <- width + (2/0.05) * min(abs(x_sub[,"lower"]), abs(x_sub[,"upper"])) * (1 - coverage_true)
+        } else {
+            score <- NA_real_
+        }
         
         if(all(is.na(x_sub))){
-            n <- NA_real_
+            n <- NA_integer_
         } else {
             n <- nrow(x_sub)
         }
         
        out <- tibble(method = methods[i], 
-                     coverage = coverage, coverage_effects = coverage_effects,
-                     gammaMin = gamma_min, n = n,
-                     score = score, width = width)
+                     coverage_true = coverage_true, 
+                     coverage_effects = coverage_effects,
+                     coverage_prediction = coverage_prediction,
+                     gammaMin = gamma_min, 
+                     n = n,
+                     width = width,
+                     score = score) 
         
         # return
         out
@@ -445,7 +499,7 @@ sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time
                                     saveRDS(res, file = "error.rds")
                                     return(NA)
                                 })
-                out <- tryCatch({if(is.logical(CIs)){NA} else {CI2measures(x = CIs)}},
+                out <- tryCatch({if(is.logical(CIs)){NA} else {CI2measures(x = CIs, pars = pars)}},
                                 error = function(cond){
                                     text = capture.output(cond)
                                     cat("Error in CI2measures, iteration:", i,
@@ -465,7 +519,7 @@ sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time
             if(any(is.na(av))){
                 out <- "failed"
             } else {
-                av <- do.call(rbind, av)
+                av <- bind_rows(av)
                 out <- tryCatch({
                     ## compute mean for everything
                     bind_rows(
@@ -484,7 +538,7 @@ sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time
                             cbind(pars, .),
                         
                         # summary statistics for gamma_min
-                        av %>% filter(method %in% c("Harmonic Mean", "Harmonic Mean Additive", "Harmonic Mean Multiplicative")) %>%
+                        av %>% filter(grepl("Harmonic Mean CI|Harmonic Mean Additive CI|Harmonic Mean Multiplicative CI", method)) %>%
                             group_by(method) %>%
                             summarize(across("gammaMin", 
                                              .fns = list(min = function(x){if(any(is.na(x))){NA_real_} else {min(x, na.rm = TRUE)}}, 
@@ -503,7 +557,7 @@ sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time
                             cbind(pars, .),
                         
                         # relative frequency for n
-                        av %>% filter(method %in% c("Harmonic Mean", "Harmonic Mean Additive", "Harmonic Mean Multiplicative")) %>%
+                        av %>% filter(grepl("Harmonic Mean CI|Harmonic Mean Additive CI|Harmonic Mean Multiplicative CI", method)) %>%
                             group_by(method) %>%
                             summarize(across("n", 
                                              .fns = list("1" = function(x) sum(x == 1),
@@ -556,7 +610,7 @@ sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time
 grid <- expand.grid(sampleSize = 50,                                 # sample size of trial
                     effect = 0.2,                                    # average effect, impacts selection bias
                     I2 = c(0, 0.3, 0.6, 0.9),                        # Higgin's I^2 heterogeneity measure
-                    k = c(2, 3, 5, 10, 20),                          # number of studies
+                    k = c(3, 5, 10, 20, 50),                         # number of studies
                     heterogeneity = c("additive", "multiplicative"), # The heterogeneity model that the studies are simulated from
                     dist = c("Gaussian", "t"),                       # distribution 
                     bias = c("none", "moderate", "strong"),          # bias
