@@ -23,6 +23,7 @@
 rm(list = ls())
 library(meta)
 #source("ReplicationSuccess_extension_LH.R")
+devtools::install_github("felix-hof/hMean")
 library(hMean)
 library(tidyverse); theme_set(theme_bw())
 library(rlang)
