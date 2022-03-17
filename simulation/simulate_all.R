@@ -81,6 +81,8 @@ simRE <- function(k, sampleSize, effect, I2,
         
     } else { ## multiplicative model
         phi <- 1/(1 - I2)
+        eps2 <- 1/k * sum(2/n)
+        tau2 <- eps2 * (phi - 1)
         if(dist == "t") {
             ## the sn::rst(xi=0, omega, nu) distribution has variance
             ## omega^2 nu/(nu-2) (if nu>2)
@@ -91,12 +93,11 @@ simRE <- function(k, sampleSize, effect, I2,
             ## large as the heterogeneity variance under normality.
             ## sample sequentially with marginal variance equal to
             ## (phi-1)*2/n + 2/n = phi*2/n 
-            delta <- rst(n = k, xi = effect, omega = sqrt((phi-1)/n), nu = 4)
-            theta <- rnorm(n = k, mean = delta, sd = sqrt(2/n))
+            delta <- rst(n = k, xi = effect, omega = sqrt(tau2/2), nu = 4)
         } else {  ## Gaussian, sample directly from marginal
-            delta <- rnorm(n = k, mean = effect, sd = 2/n*(phi - 1))
-            theta <- rnorm(n = k, mean = delta, sd = sqrt(2/n))
+            delta <- rnorm(n = k, mean = effect, sd = sqrt(tau2))
         }
+        theta <- rnorm(n = k, mean = delta, sd = sqrt(2/n))
     }
     se <- sqrt(rchisq(n = k, df = 2*n - 2) / (n*(n - 1)))
     o <- cbind("theta" = theta, "se" = se, "delta" = delta)
