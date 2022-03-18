@@ -2,3 +2,5 @@
 .Rhistory
 error.rds
 error.txt
+pars.rds
+simulation/figs/
