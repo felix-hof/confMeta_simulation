@@ -49,7 +49,7 @@ if(length(libs) == 0){
 } else {
 	cat("Installing packages:\n", paste(libs, collapse = "\n", "\n"))
 	lapply(libs, function(x){
-	  out <- tryCatch({install.packages(x)},
+	  out <- tryCatch({install.packages(x); 0L},
 		   warning = function(w) "NA on CRAN",
 		   error = function(e) "NA on CRAN")
 	  if(out == "NA on CRAN") devtools::install_github(paste0("felix-hof/", x))
