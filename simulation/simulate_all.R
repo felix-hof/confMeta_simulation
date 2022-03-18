@@ -49,19 +49,14 @@ library(sn)
 #' \code{theta} (effect estimates) and
 #' \code{se} (standard errors).
 simRE <- function(k, sampleSize, effect, I2, 
-                  heterogeneity = c("additive", "multiplicative"),
-                  dist=c("t", "Gaussian"),
+                  heterogeneity,
+                  dist,
                   large) {
     
     # get args
-    dist <- match.arg(dist)
     n <- rep(sampleSize, k)
-    heterogeneity <- match.arg(heterogeneity)
     # include large studies
-    if(large == 1)
-        n[1] <- 10 * n[1]
-    if(large == 2)
-        n[1:2] <- 10 * n[1:2]
+    if(large != 0) n[seq_len(large)] <- n[seq_len(large)] * 10
     # stuff for additive model
     if(heterogeneity == "additive"){
         eps2 <- 1/k * sum(2/n)
@@ -123,12 +118,11 @@ simRE <- function(k, sampleSize, effect, I2,
 #'         sigma2 = c(1, 2, 1, 2, 1, 2), bias = "moderate")
 #' pAccept(theta  = c(0, 0, 1, 1, 2, 2),
 #'         sigma2 = c(1, 2, 1, 2, 1, 2), bias = "strong")
-pAccept <- function(theta, se, bias = c("moderate", "strong")){
+pAccept <- function(theta, se, bias){
     ## Begg & Mazumdar, Biometrics, 1994
     ## moderate bias: beta = 4, gamma = 3
     ## strong bias:   beta = 4, gamma = 1.5
-    stopifnot(!is.null(bias))
-    bias <- match.arg(bias)
+    
     if(bias == "moderate"){
         beta <- 4
         gamma <- 3
@@ -136,8 +130,6 @@ pAccept <- function(theta, se, bias = c("moderate", "strong")){
         beta <- 4
         gamma <- 1.5
     }
-    stopifnot(length(beta) == 1, is.finite(beta), 0 < beta,
-              length(gamma) == 1, is.finite(gamma), 0 < gamma)
     
     exp(-beta * (dnorm(-theta / se))^gamma)
 }
@@ -174,57 +166,72 @@ simREbias <- function(k, sampleSize, effect, I2,
                       dist = c("t", "Gaussian"), 
                       large,
                       bias = c("none", "moderate", "strong"),
-                      verbose = TRUE){
+                      verbose = TRUE,
+                      check_inputs = TRUE){
     # input checks
-    stopifnot(length(k) == 1,
-              length(sampleSize) == 1,
-              is.numeric(effect),
-              length(effect) == 1,
-              is.finite(effect),
-              length(I2) == 1,
-              0 <= I2, I2 < 1,
-              length(heterogeneity) == 1,
-              !is.null(dist),
-              !is.null(large),
-              is.numeric(large),
-              length(large)==1,
-              large %in% c(0,1,2),
-              length(bias) == 1,
-              !is.null(bias))
+    if(check_inputs){
+        stopifnot(length(k) == 1L,
+                  is.numeric(k),
+                  is.numeric(sampleSize),
+                  is.finite(sampleSize),
+                  length(sampleSize) == 1L,
+                  is.numeric(effect),
+                  length(effect) == 1L,
+                  is.numeric(effect),
+                  is.finite(effect),
+                  length(I2) == 1,
+                  is.numeric(I2),
+                  0 <= I2, I2 < 1,
+                  is.character(heterogeneity),
+                  length(heterogeneity) == 1L,
+                  !is.na(heterogeneity),
+                  is.character(dist),
+                  length(dist) == 1L,
+                  !is.na(dist),
+                  is.numeric(large),
+                  length(large) == 1L,
+                  is.finite(large),
+                  large %in% c(0,1,2),
+                  is.character(bias),
+                  length(bias) == 1L,
+                  !is.na(bias),
+                  
+                  k >= large)
+    }
     
     bias <- match.arg(bias)
+    dist <- match.arg(dist)
+    heterogeneity <- match.arg(heterogeneity)
 
     if(bias == "none"){
-        o <- simRE(k=k, sampleSize=sampleSize, effect = effect, I2=I2, heterogeneity=heterogeneity, dist=dist, large=large)
+        o <- simRE(k = k, sampleSize = sampleSize, effect = effect, I2 = I2, heterogeneity = heterogeneity, dist = dist, large = large)
+        ## add attributes and return
         attr(o, "heterogeneity") <- heterogeneity
         attr(o, which = "effect") <- effect
         return(o)
     }
         
     ## first ignore the 'large' 
-    o <- simRE(k=k*3, sampleSize=sampleSize, effect=effect, I2=I2, heterogeneity=heterogeneity, dist=dist, large=0)
+    o <- simRE(k = k * 3, sampleSize = sampleSize, effect = effect, I2 = I2, heterogeneity = heterogeneity, dist = dist, large = 0)
     pa <- pAccept(theta = o[,"theta"], se = o[,"se"], bias = bias)
-    keep <- rbernoulli(n = k*3, p = pa)
+    keep <- rbernoulli(n = k * 3, p = pa)
     while(k > sum(keep)) {
-        if(verbose)
-            cat(".")
-        o2 <- simRE(k=k*3, sampleSize=sampleSize, effect = effect, I2=I2, dist=dist,  large=0)
+        if(verbose) cat(".")
+        o2 <- simRE(k = k*3, sampleSize = sampleSize, effect = effect, I2 = I2, heterogeneity = heterogeneity, dist = dist,  large = 0)
         pa2 <- pAccept(theta = o2[,"theta"], se = o2[,"se"], bias = bias)
-        keep2 <- rbernoulli(n = k*3, p = pa2)
+        keep2 <- rbernoulli(n = k * 3, p = pa2)
         o <- rbind(o, o2)
         keep <- c(keep, keep2)
     }
     o <- o[keep,][1:k,]
 
     ## add large studies
-    if(large == 1){
-        oLarge <- simRE(k=k, sampleSize=sampleSize, effect = effect, I2=I2, heterogeneity=heterogeneity, dist=dist, large=large)
-        o <- rbind(oLarge[1,], o[-1,]) 
+    if(large != 0){
+        oLarge <- simRE(k = large, sampleSize = sampleSize, effect = effect, I2 = I2, heterogeneity = heterogeneity, dist = dist, large = large)
+        o <- rbind(oLarge, o[-seq_len(large),]) 
     }
-    if(large == 2){
-        oLarge <- simRE(k=k, sampleSize=sampleSize, effect = effect, I2=I2, heterogeneity=heterogeneity, dist=dist, large=large)
-        o <- rbind(oLarge[1:2,], o[-c(1,2),]) 
-    }
+    
+    ## add attributes and return
     attr(o, which = "heterogeneity") <- heterogeneity
     attr(o, which = "effect") <- effect
     o
@@ -253,53 +260,54 @@ sim2CIs <- function(x){
                   control = list(maxiter = 10000, stepadj = 0.25))
     
     ## HMean2sided
-    if(nrow(x) <= 5) {
-        HM2_f <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
-                              alternative = "two.sided", distr = "f",
-                              heterogeneity = "additive")
-        HM2_chisq <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
-                                  alternative = "two.sided", distr = "chisq",
-                                  heterogeneity = "additive")
-    } else {
-        HM2_f <- list(CI = cbind(lower = NA_real_, upper = NA_real_))
-        HM2_chisq <- list(CI = cbind(lower = NA_real_, upper = NA_real_))
-    }
+    # if(nrow(x) <= 5) {
+    #     HM2_f <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
+    #                           alternative = "two.sided", distr = "f",
+    #                           heterogeneity = "additive")
+    #     HM2_chisq <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
+    #                               alternative = "two.sided", distr = "chisq",
+    #                               heterogeneity = "additive")
+    # } else {
+    #     HM2_f <- list(CI = cbind(lower = NA_real_, upper = NA_real_))
+    #     HM2_chisq <- list(CI = cbind(lower = NA_real_, upper = NA_real_))
+    # }
     
     ## Note: these here are actually not really necessary anymore. In an earlier version, the
     ## argument tau2 defaulted to 0 and the heterogeneity was always additive.
     ## TODO: Check whether we should keep this.
     
-    ## HMeanNone
+    ## HMeanNone (additive model with tau2 = 0)
     HM_f <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
-                         alternative = "none", distr = "f",
-                         heterogeneity = "additive")
+                         alternative = "none", distr = "f", tau2 = 0,
+                         heterogeneity = "additive", check_inputs = TRUE)
     HM_chisq <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
-                             alternative = "none", distr = "chisq",
-                             heterogeneity = "additive")
+                             alternative = "none", distr = "chisq", tau2 = 0,
+                             heterogeneity = "additive", check_inputs = TRUE)
     
-    ## HMeanNone_tau2
+    ## HMeanNone_tau2 (additive with estimated tau2)
     HM_tau2_f <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
                               tau2 = REML$tau2, alternative = "none", distr = "f",
-                              heterogeneity = "additive")
+                              heterogeneity = "additive", check_inputs = TRUE)
     HM_tau2_chisq <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
                                   tau2 = REML$tau2, alternative = "none", distr = "chisq",
-                                  heterogeneity = "additive")
+                                  heterogeneity = "additive", check_inputs = TRUE)
     
     ## HMeanNone_phi
+    phi <- estimatePhi(thetahat = x[, "theta"], se = x[, "se"])
     HM_phi_f <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
-                             alternative = "none", distr = "f", 
-                             heterogeneity = "multiplicative")
+                             phi = phi, alternative = "none", distr = "f", 
+                             heterogeneity = "multiplicative", check_inputs = TRUE)
     HM_phi_chisq <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
-                                 alternative = "none", distr = "chisq", 
-                                 heterogeneity = "multiplicative")
+                                 phi = phi, alternative = "none", distr = "chisq", 
+                                 heterogeneity = "multiplicative", check_inputs = TRUE)
     
     tib <- tibble(lower = c(HC$ci.lb,
                             REML$lower.random,
                             REML$lower.predict,
                             HK$lower.random,
                             HK$lower.predict,
-                            HM2_chisq$CI[,"lower"],
-                            HM2_f$CI[,"lower"],
+                            #HM2_chisq$CI[,"lower"],
+                            #HM2_f$CI[,"lower"],
                             HM_chisq$CI[,"lower"],
                             HM_f$CI[,"lower"],
                             HM_tau2_chisq$CI[,"lower"],
@@ -311,8 +319,8 @@ sim2CIs <- function(x){
                             REML$upper.predict,
                             HK$upper.random,
                             HK$upper.predict,
-                            HM2_chisq$CI[,"upper"],
-                            HM2_f$CI[,"upper"],
+                            #HM2_chisq$CI[,"upper"],
+                            #HM2_f$CI[,"upper"],
                             HM_chisq$CI[,"upper"],
                             HM_f$CI[,"upper"],
                             HM_tau2_chisq$CI[,"upper"],
@@ -324,8 +332,8 @@ sim2CIs <- function(x){
                              "REML PI", 
                              "Hartung & Knapp CI",
                              "Hartung & Knapp PI",
-                             "Harmonic Mean two sided CI (chisq)",
-                             "Harmonic Mean two sided CI (f)",
+                             #"Harmonic Mean two sided CI (chisq)",
+                             #"Harmonic Mean two sided CI (f)",
                              rep("Harmonic Mean CI (chisq)", nrow(HM_chisq$CI)),
                              rep("Harmonic Mean CI (f)", nrow(HM_f$CI)),
                              rep("Harmonic Mean Additive CI (chisq)", nrow(HM_tau2_chisq$CI)),
@@ -366,7 +374,9 @@ sim2CIs <- function(x){
 #' \item{\code{coverage_effects}}{Proportion of study effects covered by the interval(s).}
 #' \item{\code{n}}{Number of intervals}
 CI2measures <- function(x, pars) {
+    
     methods <- unique(x$CIs$method)
+    
     foreach(i = seq_along(methods), .combine = rbind) %do% {
         
         # Subset by method
@@ -374,35 +384,42 @@ CI2measures <- function(x, pars) {
             select(lower, upper) %>%
             as.matrix()
         
-        # calculate whether simulated study effects are covered
+        # calculate proportion of deltas covered by the interval
         coverage_effects <- vapply(x$delta, function(delta){
             any(x_sub[,"lower"] <= delta & delta <= x_sub[,"upper"])
         }, logical(1L)) %>%
             mean()
-            
+        
+        # calculate whether all deltas covered by CI
+        coverage_effects_all <- as.numeric(all(vapply(x$delta, function(delta) any(x_sub[,"lower"] <= delta & delta <= x_sub[,"upper"]), logical(1L))))
         
         # calculate whether interval covers future study (only for hMean, hMean_additive, hMean_multiplicative)
         new_study <- simREbias(k = 1, sampleSize = pars$sampleSize, effect = pars$effect, 
                                I2 = pars$I2, heterogeneity = pars$heterogeneity, 
                                dist = pars$dist, large = 0, bias = "none")[, "delta"]
         coverage_prediction <- as.numeric(any(x_sub[,"lower"] <= new_study & new_study <= x_sub[,"upper"]))
-             
+        
+        # get gamma_min to later attach it to the function output
         if(grepl("Harmonic Mean CI|Harmonic Mean Additive CI|Harmonic Mean Multiplicative CI", methods[i])){
             gamma_min <- x$gamma %>% filter(method == methods[i]) %>% pull(gamma_min)
         } else {
             gamma_min <- NA_real_
         }
-
+        
+        # calculate total width of the interval(s)
         width <- {x_sub[,"upper"] - x_sub[,"lower"]} %>% sum(.)
         
+        # calculate whether interval covers true effect
         coverage_true <- as.numeric(any(x_sub[,"lower"] <= x$effect & x$effect <= x_sub[,"upper"]))
         
+        # Calculate score for CI methods
         if(grepl("CI", methods[i])){
             score <- width + (2/0.05) * min(abs(x_sub[,"lower"]), abs(x_sub[,"upper"])) * (1 - coverage_true)
         } else {
             score <- NA_real_
         }
         
+        # count number of intervals
         if(all(is.na(x_sub))){
             n <- NA_integer_
         } else {
@@ -412,6 +429,7 @@ CI2measures <- function(x, pars) {
        out <- tibble(method = methods[i], 
                      coverage_true = coverage_true, 
                      coverage_effects = coverage_effects,
+                     coverage_effects_all = coverage_effects_all,
                      coverage_prediction = coverage_prediction,
                      gammaMin = gamma_min, 
                      n = n,
@@ -423,6 +441,20 @@ CI2measures <- function(x, pars) {
     }
 }
 
+error_function <- function(cond, pars, error_obj = NULL, fun_name){
+    text <- capture.output(cond)
+    out_msg <- paste0("Error in ", fun_name , "iteration: ", i, "\n\n", "Parameters are:\n\n",
+                      paste0(paste0(names(pars), ": ", pars[1, ]), collapse = "\n"),
+                      "\n\nThe error message is:\n", text, "\n\n",
+                      ifelse(is.null(error_obj), 
+                             "\nSee pars.rds for the saved parameters.\n\n", 
+                             "\nSee error.rds for the last available object and pars.rds for the saved parameters.\n\n"),
+                      "--------------------------------------------------------------------------------------\n")
+    cat(out_msg, file = "error.txt", append = TRUE)
+    saveRDS(pars, file = "pars.rds")
+    if(!is.null(error_obj)) saveRDS(error_obj, file = "error.rds")
+    return(NA)
+}
 
 
 #' Simulate N times, compute CIs, assess CIs
@@ -448,14 +480,51 @@ CI2measures <- function(x, pars) {
 #' \item{value}{value of the measure}
 sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time())){
     
+    types <- vapply(grid, typeof, character(1L), USE.NAMES = TRUE)
+    
+    # check grid columns
     stopifnot(is.data.frame(grid),
               c("sampleSize", "I2", "k", "dist", 
                 "effect", "large", "heterogeneity", "bias") %in% names(grid),
-              is.numeric(N), length(N) == 1, 1 <= N)
+              types["sampleSize"] %in% c("double", "numeric", "integer"),
+              types["effect"] %in% c("double", "numeric", "integer"),
+              types["I2"] %in% c("double", "numeric", "integer"),
+              types["k"] %in% c("double", "numeric", "integer"),
+              types["heterogeneity"] %in% c("character"),
+              types["dist"] %in% c("character"),
+              types["bias"] %in% c("character"),
+              types["large"] %in% c("double", "numeric", "integer"))
     
+    # check grid
+    stopifnot(is.numeric(grid$k),
+              is.numeric(grid$sampleSize),
+              all(is.finite(grid$sampleSize)),
+              is.numeric(grid$effect),
+              is.numeric(grid$effect),
+              all(is.finite(grid$effect)),
+              is.numeric(grid$I2),
+              all(0 <= grid$I2), all(grid$I2 < 1),
+              is.character(grid$heterogeneity),
+              all(!is.na(grid$heterogeneity)),
+              is.character(grid$dist),
+              all(!is.na(grid$dist)),
+              is.numeric(grid$large),
+              all(is.finite(grid$large)),
+              all(grid$large %in% c(0,1,2)),
+              is.character(grid$bias),
+              all(!is.na(grid$bias)),
+              
+              all(grid$k >= grid$large))
+    
+    # check other arguments
+    stopifnot(is.numeric(N), length(N) == 1L, 1 <= N,
+              is.numeric(seed), length(seed) == 1L)
+    
+    # register parallel backend
     registerDoParallel(cores)
     on.exit(stopImplicitCluster())
     
+    # run simulation
     foreach(j = seq_len(nrow(grid)), .options.RNG=seed, .errorhandling = "pass") %dorng% {
         
         if(file.exists("error.txt")){
@@ -466,99 +535,68 @@ sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time
             cat("start", j, "of", nrow(grid), fill=TRUE)
             grid %>% slice(j) -> pars
             
-            # av is either a tibble or NULL
+            # av is a list with elements that are either a tibble or NA (the latter in case of an error)
             av <- foreach(i = seq_len(N), .errorhandling = "pass") %do% {
-                if(file.exists("error.txt")){return(NA)}
+                
+                # If an error happened somewhere in the simulation return NA for all successive iterations
+                if(file.exists("error.txt")) return(NA)
+                
+                # Repeat this N times. Simulate studies, calculate CIs, calculate measures
                 res <- tryCatch({
                     #if(i == 17) stop("Error in iteration 17")
                     simREbias(k = pars$k, sampleSize = pars$sampleSize,
-                                           effect = pars$effect, I2 = pars$I2,
-                                           heterogeneity = pars$heterogeneity,
-                                           dist = pars$dist, bias = pars$bias,
-                                           large = pars$large)},
-                    error = function(cond){
-                        text = capture.output(cond)
-                        cat("Error in simREbias, iteration:", i,
-                            "\nParameters are:",
-                            paste0("\n", paste0(paste0(names(pars), ":", pars[1, ]), collapse = "\n")),
-                            "\n",
-                            "\nThe error message is:",
-                            paste0("\n", text), "\n",
-                            file = "error.txt", append = TRUE)
-                        return(NA)
-                    })
-                CIs <- tryCatch({if(is.logical(res)){NA} else {sim2CIs(x = res)}},
-                                error = function(cond){
-                                    text = capture.output(cond)
-                                    cat("Error in sim2CIs, iteration:", i,
-                                        "\nParameters are:",
-                                        paste0("\n", paste0(paste0(names(pars), ":", pars[1, ]), collapse = "\n")),
-                                        "\n", 
-                                        "\nThe error message is:",
-                                        paste0("\n", text), "\n",
-                                        "\nSee error.rds for the current simulation.",
-                                        file = "error.txt", append = TRUE)
-                                    saveRDS(res, file = "error.rds")
-                                    return(NA)
-                                })
-                out <- tryCatch({if(is.logical(CIs)){NA} else {CI2measures(x = CIs, pars = pars)}},
-                                error = function(cond){
-                                    text = capture.output(cond)
-                                    cat("Error in CI2measures, iteration:", i,
-                                        "\nParameters are:",
-                                        paste0("\n", paste0(paste0(names(pars), ":", pars[1, ]), collapse = "\n")),
-                                        "\n", 
-                                        "\nThe error message is:",
-                                        paste0("\n", text), "\n",
-                                        "\nSee error.rds for the current simulation.",
-                                        file = "error.txt", append = TRUE)
-                                    saveRDS(res, file = "error.rds")
-                                    return(NA)
-                                })
+                              effect = pars$effect, I2 = pars$I2,
+                              heterogeneity = pars$heterogeneity,
+                              dist = pars$dist, bias = pars$bias,
+                              large = pars$large, check_inputs = FALSE)
+                }, error = function(cond) error_function(cond = cond, pars = pars, fun_name = "simREbias") )
+                CIs <- tryCatch({
+                    if(length(res) == 1L && is.na(res)) NA else sim2CIs(x = res)
+                }, error = function(cond) error_function(cond = cond, pars = pars, error_obj = res, fun_name = "sim2CIs"))
+                out <- tryCatch({
+                    if(length(res) == 1L && is.na(CIs)) NA else CI2measures(x = CIs, pars = pars)
+                    }, error = function(cond) error_function(cond = cond, pars = pars, error_obj = res, fun_name = "CI2measures"))
                 out
             }
             
+            # summarize the N tibbles. If any list element is NA, return "failed".
             if(any(is.na(av))){
                 out <- "failed"
             } else {
+                # rbind data frames in list "av"
                 av <- bind_rows(av)
+                # summarize simulations
                 out <- tryCatch({
-                    ## compute mean for everything
                     bind_rows(
-                        # mean for all measures
+                        ## mean for all measures
                         av %>% group_by(method) %>%
                             summarize(across(everything(), 
-                                             .fns = list(mean = function(x){if(any(is.na(x))){NA_real_} else {mean(x, na.rm = TRUE)}}),
+                                             .fns = list(mean = function(x) mean(x, na.rm = FALSE)),
                                              .names = "{.col}_{.fn}"),
-                                      .groups = "drop"
-                            ) %>% 
+                                      .groups = "drop") %>% 
                             pivot_longer(cols = !method,
                                          names_to = "measure",
-                                         values_to = "value"
-                                         ## width_sd, coverage_sd, score_sd
-                            ) %>%
+                                         values_to = "value") %>%
                             cbind(pars, .),
                         
-                        # summary statistics for gamma_min
+                        ## summary statistics for gamma_min
                         av %>% filter(grepl("Harmonic Mean CI|Harmonic Mean Additive CI|Harmonic Mean Multiplicative CI", method)) %>%
                             group_by(method) %>%
                             summarize(across("gammaMin", 
-                                             .fns = list(min = function(x){if(any(is.na(x))){NA_real_} else {min(x, na.rm = TRUE)}}, 
-                                                         firstQuart = function(x){if(any(is.na(x))){NA_real_} else {quantile(x, probs = 0.25, na.rm = TRUE, names = FALSE)}},
-                                                         median = function(x){if(any(is.na(x))){NA_real_} else {median(x, na.rm = TRUE)}},
-                                                         mean = function(x){if(any(is.na(x))){NA_real_} else {mean(x, na.rm = TRUE)}},
-                                                         thirdQuart = function(x){if(any(is.na(x))){NA_real_} else {quantile(x, probs = 0.75, na.rm = TRUE, names = FALSE)}},
-                                                         max = function(x){if(any(is.na(x))){NA_real_} else {max(x, na.rm = TRUE)}}),
-                                             .names = "{.col}_{.fn}"),
-                                      .groups = "drop"
-                            ) %>%
+                                             .fns = list(min = function(x) min(x, na.rm = FALSE), 
+                                                         firstQuart = function(x) quantile(x, probs = 0.25, na.rm = FALSE, names = FALSE),
+                                                         median = function(x) median(x, na.rm = FALSE),
+                                                         mean = function(x) mean(x, na.rm = FALSE),
+                                                         thirdQuart = function(x) quantile(x, probs = 0.75, na.rm = FALSE, names = FALSE),
+                                                         max = function(x) max(x, na.rm = FALSE)),
+                                                         .names = "{.col}_{.fn}"),
+                                      .groups = "drop") %>%
                             pivot_longer(cols = !method,
                                          names_to = "measure",
-                                         values_to = "value"
-                            ) %>%
+                                         values_to = "value") %>%
                             cbind(pars, .),
                         
-                        # relative frequency for n
+                        ## relative frequency for n
                         av %>% filter(grepl("Harmonic Mean CI|Harmonic Mean Additive CI|Harmonic Mean Multiplicative CI", method)) %>%
                             group_by(method) %>%
                             summarize(across("n", 
@@ -573,29 +611,15 @@ sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time
                                                          "9" = function(x) sum(x == 9),
                                                          "gt9" = function(x) sum(x >= 10)),
                                              .names = "{.col}_{.fn}"),
-                                      .groups = "drop"
-                            ) %>%
+                                      .groups = "drop") %>%
                             pivot_longer(cols = !method,
                                          names_to = "measure",
-                                         values_to = "value"
-                            ) %>%
+                                         values_to = "value") %>%
                             filter(!is.na(value)) %>% 
                             cbind(pars, .)
                     )
-                },
-                error = function(cond){
-                    text <- capture.output(cond)
-                    cat("Parameters are:\n",
-                        paste0(paste0(names(pars), ":", pars[1, ]), collapse = "\n"),
-                        "\n\n", "The error message is:\n",
-                        text, "\n\n",
-                        "The av object has been saved to 'error.rds'.",
-                        file = "error.rds", append = TRUE)
-                    saveRDS(av, file = "error.rds")
-                    return("failed")
-                })
+                }, error = function(cond) error_function(cond = cond, pars = pars, error_obj = av, fun_name = "summarizing measures"))
             }
-            
         }
         out
         
@@ -623,9 +647,8 @@ grid <- expand.grid(sampleSize = 50,                                 # sample si
 
 ## run simulation, e.g., on the Rambo server of I-MATH
 tic()
-out <- sim(grid = grid, N = 10000, cores = 120)
+out <- sim(grid = grid, N = 1e4, cores = 120)
 toc()
-
 
 ## save results
 dir.create("RData", showWarnings=FALSE)
