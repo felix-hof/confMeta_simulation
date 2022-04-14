@@ -67,12 +67,21 @@ out_n <- out %>%
            measure = ordered(measure, levels = rev(c("> 9", as.character(9:1)))),
            value = value/1e4)
 
+# Prepare data (summary) ----
+out_sum <- out_meanplots %>% 
+    filter(grepl("coverage", measure),
+           grepl("Additive|Multiplicative|Hartung|Henmy|REML", method),
+           !grepl("\\(f\\)", method))
+
+# Set output directory -----
+out_dir <- "~/switchdrive/Institution/harmonic_mean"
+
 #' Helper function to plot means
 #' @param data obtained by simulate_all.R and saved in RData/simulate_all.RData
 #' @param measure CI measure to plot
 #' @param by make facets based on "method" or "I2".
 plotPanels <- function(data,
-                       measure = c("coverage_true", "coverage_effects",
+                       measure = c("coverage_true", "coverage_effects", "coverage_effects_all",
                                    "coverage_prediction", "n", "width", "score"),
                        by = c("method", "I2")){
     measure <- match.arg(measure)
@@ -137,7 +146,9 @@ plotPanels <- function(data,
 
 
 ## 4.1
-dir.create("figs/meanplots", showWarnings = FALSE, recursive = TRUE)
+out_path <- file.path(out_dir, "figs/meanplots")
+dir.create(out_path, showWarnings = FALSE, recursive = TRUE)
+for(i in unique(out_meanplots$measure)) dir.create(file.path(out_path, i), showWarnings = FALSE)
 
 opts <- list(dist = out_meanplots %>% pull(dist) %>% unique(),
              bias = out_meanplots %>% pull(bias) %>% unique(),
@@ -194,9 +205,9 @@ for(x in list_seq){ # loop over summary (eg. dist)
                 } %>% 
                 wrap_plots(guides = "collect") &
                 theme(legend.position = "bottom")
-            ggsave(filename = paste0("figs/meanplots/", toupper(current), "_", 
+            ggsave(filename = paste0(out_path, "/", me, "/", toupper(current), "_", 
                                      paste0(paste0(names(grid_others[y, ]), "_", grid_others[y, ]), collapse = "_"),
-                                     "_", me, ".png"),
+                                     ".png"),
                    width = length(current_levels) * 6.5,
                    height = 12,
                    units = "in",
@@ -207,7 +218,8 @@ for(x in list_seq){ # loop over summary (eg. dist)
 
 ## gamma_min summary statistics -----------------------------------------------------------
 
-dir.create("figs/min_pH", showWarnings = FALSE, recursive = TRUE)
+out_path <- file.path(out_dir, "figs/min_pH")
+dir.create(out_path, showWarnings = FALSE, recursive = TRUE)
 
 opts <- list(dist = out_gammamin %>% pull(dist) %>% unique(),
              bias = out_gammamin %>% pull(bias) %>% unique(),
@@ -260,7 +272,7 @@ for(x in list_seq){ # loop over summary (eg. dist)
             theme(legend.position = "bottom",
                   text = element_text(size = 9),
                   plot.title = element_text(size = 10))
-        ggsave(filename = paste0("figs/min_pH/", toupper(current), "_", 
+        ggsave(filename = paste0(out_path, "/", toupper(current), "_", 
                                  paste0(paste0(names(grid_others[y, ]), "_", grid_others[y, ]), collapse = "_"),
                                  ".png"),
                width = length(current_levels) * 7,
@@ -272,6 +284,9 @@ for(x in list_seq){ # loop over summary (eg. dist)
 
 
 ## relative frequencies -----------------------------------------------------------
+
+out_path <- file.path(out_dir, "figs/rel_freq/")
+dir.create(out_path, showWarnings = FALSE, recursive = TRUE)
 
 # Adapt make_title function for now
 make_title <- function(df){
@@ -294,8 +309,6 @@ make_title <- function(df){
                    paste0("bquote(\"", paste0(paste0(nms, ": ", vals), collapse = ", "), "\")"))
     return(eval(parse(text = args)))
 }
-
-dir.create("figs/rel_freq", showWarnings = FALSE, recursive = TRUE)
 
 opts <- list(dist = out_n %>% pull(dist) %>% unique(),
              bias = out_n %>% pull(bias) %>% unique(),
@@ -347,7 +360,7 @@ for(x in list_seq){ # loop over summary (eg. dist)
             theme(legend.position = "bottom",
                   text = element_text(size = 9),
                   plot.title = element_text(size = 10))
-        ggsave(filename = paste0("figs/rel_freq/", toupper(current), "_", 
+        ggsave(filename = paste0(out_path, "/", toupper(current), "_", 
                                  paste0(paste0(names(grid_others[y, ]), "_", grid_others[y, ]), collapse = "_"),
                                  ".png"),
                width = length(current_levels) * 7.5,
@@ -357,3 +370,75 @@ for(x in list_seq){ # loop over summary (eg. dist)
     }
 }
 
+# Summary of meanplots --------------------------------------------------------------
+
+out_path <- file.path(out_dir, "figs/summary/")
+dir.create(out_path, showWarnings = FALSE, recursive = TRUE)
+
+opts <- list(bias = out_sum %>% pull(bias) %>% unique(),
+             meth = out_sum %>% pull(method) %>% unique(),
+             meas = out_sum %>% pull(measure) %>% unique())
+
+totitle <- function(string){
+    stopifnot(is.character(string),
+              length(string) == 1L)
+    if(grepl("_", string)) string <- sub("_", " ", string)
+    string <- unlist(strsplit(string, split = " "))
+    string <- strsplit(string, split = "")
+    string <- vapply(string, function(y){
+        y[1] <- toupper(y[1])
+        paste0(y, collapse = "")
+    }, character(1L))
+    paste0(string, collapse = " ")
+}
+
+
+for(x in opts$meas){
+    data <- out_sum %>% 
+        filter(measure == x) %>% 
+        {
+            if(x == "coverage_prediction"){
+                .[] %>% 
+                    filter(grepl("(^Harmonic Mean .+ CI .+|^.+PI$)", method))
+            } else {
+                .[] %>% 
+                    filter(!grepl("^.+PI$", method))
+            }
+        } %>% 
+        group_by(k, bias, I2, method) %>% 
+        summarise(mean_value = mean(value),
+                  max_value = max(value),
+                  min_value = min(value), .groups = "drop")
+    methods <- data %>% pull(method) %>% unique()
+    ylimes <- c(min(data$min_value), max(data$max_value))
+    transparency <- 0.6
+    plots <- lapply(seq_along(methods), function(y){
+        p <- data %>% 
+            filter(method == methods[y]) %>% 
+            mutate(k = factor(k),  I2 = factor(I2), 
+                   bias = factor(bias, levels = c("none", "moderate", "strong")),
+                   method = factor(method)) %>% 
+            ggplot(aes(x = k, y = mean_value, color = I2, group = I2)) +
+            geom_line() +
+            geom_point() +
+            geom_errorbar(aes(ymin = min_value, ymax = max_value), 
+                          alpha = transparency) +
+            scale_color_discrete(name = expression(I^2)) +
+            facet_wrap(~bias) +
+            ylim(ylimes) +
+            theme_bw() +
+            theme(legend.position = "bottom") +
+            labs(y = methods[y])
+        p
+    }) %>% 
+        wrap_plots(., guides = "collect", nrow = length(.)) +
+        plot_annotation(title = totitle(x)) &
+        theme(legend.position = "bottom")
+    ggsave(filename = paste0(out_path, x, ".png"),
+           plot = plots,
+           width = length(unique(data$bias)) * 5,
+           height = length(unique(data$method)) * 5,
+           units = "in",
+           type = "cairo")
+    
+}
