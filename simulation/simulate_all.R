@@ -22,7 +22,6 @@
 ## Florian Gerber, florian.gerber@uzh.ch, Oct. 14, 2021
 rm(list = ls())
 library(meta)
-#source("ReplicationSuccess_extension_LH.R")
 devtools::install_github("felix-hof/hMean")
 library(hMean)
 library(tidyverse); theme_set(theme_bw())
@@ -277,29 +276,39 @@ sim2CIs <- function(x){
     ## TODO: Check whether we should keep this.
     
     ## HMeanNone (additive model with tau2 = 0)
-    HM_f <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
+    HM_f <- hMean::hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
                          alternative = "none", distr = "f", tau2 = 0,
                          heterogeneity = "additive", check_inputs = TRUE)
-    HM_chisq <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
+    HM_chisq <- hMean::hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
                              alternative = "none", distr = "chisq", tau2 = 0,
                              heterogeneity = "additive", check_inputs = TRUE)
     
     ## HMeanNone_tau2 (additive with estimated tau2)
-    HM_tau2_f <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
+    HM_tau2_f <- hMean::hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
                               tau2 = REML$tau2, alternative = "none", distr = "f",
                               heterogeneity = "additive", check_inputs = TRUE)
-    HM_tau2_chisq <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
+    HM_tau2_chisq <- hMean::hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
                                   tau2 = REML$tau2, alternative = "none", distr = "chisq",
                                   heterogeneity = "additive", check_inputs = TRUE)
     
-    ## HMeanNone_phi
-    phi <- estimatePhi(thetahat = x[, "theta"], se = x[, "se"])
-    HM_phi_f <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
+    ## HMeanNone_phi (multiplicative with estimated phi)
+    phi <- hMean::estimatePhi(thetahat = x[, "theta"], se = x[, "se"])
+    HM_phi_f <- hMean::hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
                              phi = phi, alternative = "none", distr = "f", 
                              heterogeneity = "multiplicative", check_inputs = TRUE)
-    HM_phi_chisq <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
+    HM_phi_chisq <- hMean::hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
                                  phi = phi, alternative = "none", distr = "chisq", 
                                  heterogeneity = "multiplicative", check_inputs = TRUE)
+    
+    ## HMean_None with k-trials (multiplicative with estimated phi)
+    HM_ktrial_mult <- hMean::hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
+                                          phi = phi, alternative = "none", distr = "chisq", # distr is not actually used
+                                          heterogeneity = "multiplicative", check_inputs = TRUE,
+                                          pValueFUN = hMean::kTRMu)
+    HM_ktrial_add <- hMean::hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
+                                         tau2 = REML$tau2, alternative = "none", distr = "chisq", # distr is not actually used
+                                         heterogeneity = "additive", check_inputs = TRUE,
+                                         pValueFUN = hMean::kTRMu)
     
     tib <- tibble(lower = c(HC$ci.lb,
                             REML$lower.random,
@@ -313,7 +322,9 @@ sim2CIs <- function(x){
                             HM_tau2_chisq$CI[,"lower"],
                             HM_tau2_f$CI[,"lower"],
                             HM_phi_chisq$CI[,"lower"],
-                            HM_phi_f$CI[,"lower"]),
+                            HM_phi_f$CI[,"lower"],
+                            HM_ktrial_add$CI[,"lower"],
+                            HM_ktrial_mult$CI[,"lower"]),
                   upper = c(HC$ci.ub,
                             REML$upper.random,
                             REML$upper.predict,
@@ -326,7 +337,9 @@ sim2CIs <- function(x){
                             HM_tau2_chisq$CI[,"upper"],
                             HM_tau2_f$CI[,"upper"],
                             HM_phi_chisq$CI[,"upper"],
-                            HM_phi_f$CI[,"upper"]),
+                            HM_phi_f$CI[,"upper"],
+                            HM_ktrial_add$CI[,"upper"],
+                            HM_ktrial_mult$CI[,"upper"]),
                   method = c("Henmy & Copas CI",
                              "REML CI",
                              "REML PI", 
@@ -339,18 +352,24 @@ sim2CIs <- function(x){
                              rep("Harmonic Mean Additive CI (chisq)", nrow(HM_tau2_chisq$CI)),
                              rep("Harmonic Mean Additive CI (f)", nrow(HM_tau2_f$CI)),
                              rep("Harmonic Mean Multiplicative CI (chisq)", nrow(HM_phi_chisq$CI)),
-                             rep("Harmonic Mean Multiplicative CI (f)", nrow(HM_phi_f$CI))))
+                             rep("Harmonic Mean Multiplicative CI (f)", nrow(HM_phi_f$CI)),
+                             rep("k-Trials Additive CI", nrow(HM_ktrial_add$CI)),
+                             rep("k-Trials Multiplicative CI", nrow(HM_ktrial_mult$CI))
+                             ))
     out <- list(CIs = tib,
                 model = attributes(x)$heterogeneity,
                 gamma = tibble("method" = c("Harmonic Mean CI (chisq)", "Harmonic Mean CI (f)", 
                                             "Harmonic Mean Additive CI (chisq)", "Harmonic Mean Additive CI (f)", 
-                                            "Harmonic Mean Multiplicative CI (chisq)", "Harmonic Mean Multiplicative CI (f)"),
+                                            "Harmonic Mean Multiplicative CI (chisq)", "Harmonic Mean Multiplicative CI (f)",
+                                            "k-Trials Additive CI", "k-Trials Multiplicative CI"),
                                "gamma_min" = c(min(HM_chisq$gamma[,2]), min(HM_f$gamma[,2]), 
                                                min(HM_tau2_chisq$gamma[,2]), min(HM_tau2_f$gamma[,2]),
-                                               min(HM_phi_chisq$gamma[,2]), min(HM_phi_f$gamma[,2])),
+                                               min(HM_phi_chisq$gamma[,2]), min(HM_phi_f$gamma[,2]),
+                                               min(HM_ktrial_add$gamma[,2]), min(HM_ktrial_mult$gamma[,2])),
                                "x_gamma_min" = c(HM_chisq$gamma[which.min(HM_chisq$gamma[,2]),1], HM_f$gamma[which.min(HM_f$gamma[,2]),1],
                                                  HM_tau2_chisq$gamma[which.min(HM_tau2_chisq$gamma[,2]),1], HM_tau2_f$gamma[which.min(HM_tau2_f$gamma[,2]),1],
-                                                 HM_phi_chisq$gamma[which.min(HM_phi_chisq$gamma[,2]),1], HM_phi_f$gamma[which.min(HM_phi_f$gamma[,2]),1])),
+                                                 HM_phi_chisq$gamma[which.min(HM_phi_chisq$gamma[,2]),1], HM_phi_f$gamma[which.min(HM_phi_f$gamma[,2]),1],
+                                                 HM_ktrial_add$gamma[which.min(HM_ktrial_add$gamma[,2]),1], HM_ktrial_mult$gamma[which.min(HM_ktrial_add$gamma[,2]),1])),
                 theta = x[, "theta"],
                 delta = x[, "delta"],
                 effect = attributes(x)$effect)
@@ -389,6 +408,16 @@ CI2measures <- function(x, pars) {
             any(x_sub[,"lower"] <= delta & delta <= x_sub[,"upper"])
         }, logical(1L)) %>%
             mean()
+        
+        # calculate how many times at least one study-specific effect is covered
+        found <- FALSE
+        for(z in x$delta){
+          if(any(x_sub[,"lower"] <= z & z <= x_sub[,"upper"])){
+            found <- TRUE
+            break
+          }
+        }
+        coverage_effects_min1 <- as.numeric(found)
         
         # calculate whether all deltas covered by CI
         coverage_effects_all <- as.numeric(all(vapply(x$delta, function(delta) any(x_sub[,"lower"] <= delta & delta <= x_sub[,"upper"]), logical(1L))))
@@ -429,6 +458,7 @@ CI2measures <- function(x, pars) {
        out <- tibble(method = methods[i], 
                      coverage_true = coverage_true, 
                      coverage_effects = coverage_effects,
+                     coverage_effects_min1 = coverage_effects_min1,
                      coverage_effects_all = coverage_effects_all,
                      coverage_prediction = coverage_prediction,
                      gammaMin = gamma_min, 
