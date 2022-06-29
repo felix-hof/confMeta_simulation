@@ -36,7 +36,9 @@ out_meanplots <- out %>%
     bind_rows() %>% 
     filter(grepl("_mean$", measure), 
            !grepl("^gammaMin", measure),
-           !grepl("two sided", method)) %>% 
+           !grepl("two sided", method),
+           !grepl("\\(f\\)", method)
+           ) %>% 
     mutate(method = ifelse(grepl("REML", method), gsub("REML", "Random Effects, default, REML", method), method),
            measure = gsub("_mean$", "", measure))
 
@@ -44,8 +46,10 @@ out_meanplots <- out %>%
 out_gammamin <- out %>% 
     bind_rows() %>% 
     filter(grepl("^gammaMin", measure), 
-           grepl("Harmonic Mean", method),
-           !grepl("two sided", method)) %>% 
+           grepl("Harmonic Mean|k-Trials", method),
+           !grepl("two sided", method),
+           !grepl("\\(f\\)", method)
+           ) %>% 
     distinct() %>% # throw out the doubly included gammaMin_mean entries
     mutate(measure = gsub("^gammaMin_", "", measure),
            measure = case_when(measure == "min" ~ "Minimum",
@@ -81,7 +85,7 @@ out_dir <- "~/switchdrive/Institution/harmonic_mean"
 #' @param measure CI measure to plot
 #' @param by make facets based on "method" or "I2".
 plotPanels <- function(data,
-                       measure = c("coverage_true", "coverage_effects", "coverage_effects_all",
+                       measure = c("coverage_true", "coverage_effects", "coverage_effects_all", "coverage_effects_min1",
                                    "coverage_prediction", "n", "width", "score"),
                        by = c("method", "I2")){
     measure <- match.arg(measure)
@@ -90,7 +94,7 @@ plotPanels <- function(data,
         mutate(k = factor(k),
                I2 = factor(I2))
     if(measure == "n"){
-        data2 <- data2[grepl("Harmonic Mean", data$method), ]
+        data2 <- data2[grepl("Harmonic Mean|k-Trials", data$method), ]
     }
     if(by == "method"){
         data2 %>% 
@@ -103,6 +107,7 @@ plotPanels <- function(data,
                                                levels = c("Harmonic Mean CI (chisq)", "Harmonic Mean Additive CI (chisq)",
                                                           "Harmonic Mean Multiplicative CI (chisq)", "Harmonic Mean CI (f)", 
                                                           "Harmonic Mean Additive CI (f)", "Harmonic Mean Multiplicative CI (f)",
+                                                          "k-Trials Additive CI", "k-Trials Multiplicative CI",
                                                           "Hartung & Knapp PI", "Random Effects, default, REML PI")))
                 } else {
                     .[] %>%
@@ -111,6 +116,7 @@ plotPanels <- function(data,
                                                levels = c("Harmonic Mean CI (chisq)", "Harmonic Mean Additive CI (chisq)",
                                                           "Harmonic Mean Multiplicative CI (chisq)", "Harmonic Mean CI (f)", 
                                                           "Harmonic Mean Additive CI (f)", "Harmonic Mean Multiplicative CI (f)",
+                                                          "k-Trials Additive CI", "k-Trials Multiplicative CI",
                                                           "Hartung & Knapp CI", "Random Effects, default, REML CI", 
                                                           "Henmy & Copas CI")))
                 }
@@ -178,7 +184,7 @@ for(x in list_seq){ # loop over summary (eg. dist)
                 {
                     if(me == "coverage_prediction"){
                         ylim <- .[] %>% 
-                            filter(grepl("Harmonic Mean|PI", method)) %>% 
+                            filter(grepl("Harmonic Mean|PI|k-Trials", method)) %>% 
                             pull(value) %>% 
                             {c(min(.), max(.))}
                     } else {
@@ -246,9 +252,10 @@ for(x in list_seq){ # loop over summary (eg. dist)
         img_data <- out_gammamin %>% 
             filter(!!!filters) %>% 
             mutate(method = factor(method, 
-                                   levels = c("Harmonic Mean CI (chisq)", "Harmonic Mean Additive CI (chisq)",
-                                              "Harmonic Mean Multiplicative CI (chisq)", "Harmonic Mean CI (f)", 
-                                              "Harmonic Mean Additive CI (f)", "Harmonic Mean Multiplicative CI (f)")))
+                                   levels = c("Harmonic Mean CI (chisq)", "Harmonic Mean Additive CI (chisq)", "Harmonic Mean Multiplicative CI (chisq)", 
+                                              #"Harmonic Mean CI (f)", "Harmonic Mean Additive CI (f)", "Harmonic Mean Multiplicative CI (f)",
+                                              #"k-Trials Additive CI", "k-Trials Multiplicative CI"
+                                              )))
         lapply(current_levels, function(z){
             title <- img_data %>% 
                 filter(!!sym(current) == z) %>% 
@@ -336,8 +343,8 @@ for(x in list_seq){ # loop over summary (eg. dist)
         img_data <- out_n %>% 
             filter(!!!filters) %>% 
             mutate(method = factor(method, 
-                                   levels = c("Harmonic Mean CI (chisq)", "Harmonic Mean Additive CI (chisq)",
-                                              "Harmonic Mean Multiplicative CI (chisq)", "Harmonic Mean CI (f)", 
+                                   levels = c("Harmonic Mean CI (chisq)", "Harmonic Mean Additive CI (chisq)", "Harmonic Mean Multiplicative CI (chisq)", 
+                                              "Harmonic Mean CI (f)", 
                                               "Harmonic Mean Additive CI (f)", "Harmonic Mean Multiplicative CI (f)")))
         lapply(current_levels, function(z){
             title <- img_data %>% 
@@ -399,7 +406,7 @@ for(x in opts$meas){
         {
             if(x == "coverage_prediction"){
                 .[] %>% 
-                    filter(grepl("(^Harmonic Mean .+ CI .+|^.+PI$)", method))
+                    filter(grepl("(^Harmonic Mean .+ CI .+|^.+PI$|^k-Trials)", method))
             } else {
                 .[] %>% 
                     filter(!grepl("^.+PI$", method))
