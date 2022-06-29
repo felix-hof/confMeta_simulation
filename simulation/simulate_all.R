@@ -429,7 +429,7 @@ CI2measures <- function(x, pars) {
         coverage_prediction <- as.numeric(any(x_sub[,"lower"] <= new_study & new_study <= x_sub[,"upper"]))
         
         # get gamma_min to later attach it to the function output
-        if(grepl("Harmonic Mean CI|Harmonic Mean Additive CI|Harmonic Mean Multiplicative CI", methods[i])){
+        if(grepl("Harmonic Mean CI|Harmonic Mean Additive CI|Harmonic Mean Multiplicative CI|k-Trials Additive CI|k-Trials Multiplicative CI", methods[i])){
             gamma_min <- x$gamma %>% filter(method == methods[i]) %>% pull(gamma_min)
         } else {
             gamma_min <- NA_real_
