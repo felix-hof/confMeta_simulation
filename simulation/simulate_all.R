@@ -610,7 +610,7 @@ sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time
                             cbind(pars, .),
                         
                         ## summary statistics for gamma_min
-                        av %>% filter(grepl("Harmonic Mean CI|Harmonic Mean Additive CI|Harmonic Mean Multiplicative CI", method)) %>%
+                        av %>% filter(grepl("Harmonic Mean CI|Harmonic Mean Additive CI|Harmonic Mean Multiplicative CI|k-Trials Additive CI|k-Trials Multiplicative CI", method)) %>%
                             group_by(method) %>%
                             summarize(across("gammaMin", 
                                              .fns = list(min = function(x) min(x, na.rm = FALSE), 
@@ -627,7 +627,7 @@ sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time
                             cbind(pars, .),
                         
                         ## relative frequency for n
-                        av %>% filter(grepl("Harmonic Mean CI|Harmonic Mean Additive CI|Harmonic Mean Multiplicative CI", method)) %>%
+                        av %>% filter(grepl("Harmonic Mean CI|Harmonic Mean Additive CI|Harmonic Mean Multiplicative CI|k-Trials Additive CI|k-Trials Multiplicative CI", method)) %>%
                             group_by(method) %>%
                             summarize(across("n", 
                                              .fns = list("1" = function(x) sum(x == 1),
