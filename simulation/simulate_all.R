@@ -273,7 +273,6 @@ sim2CIs <- function(x){
     
     ## Note: these here are actually not really necessary anymore. In an earlier version, the
     ## argument tau2 defaulted to 0 and the heterogeneity was always additive.
-    ## TODO: Check whether we should keep this.
     
     ## HMeanNone (additive model with tau2 = 0)
     HM_f <- hMean::hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
@@ -301,12 +300,16 @@ sim2CIs <- function(x){
                                  heterogeneity = "multiplicative", check_inputs = TRUE)
     
     ## HMean_None with k-trials (multiplicative with estimated phi)
+    HM_ktrial_none <- hMean::hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
+                                          alternative = "none",
+                                          heterogeneity = "none", check_inputs = TRUE,
+                                          pValueFUN = hMean::kTRMu)
     HM_ktrial_mult <- hMean::hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
-                                          phi = phi, alternative = "none", distr = "chisq", # distr is not actually used
+                                          phi = phi, alternative = "none",
                                           heterogeneity = "multiplicative", check_inputs = TRUE,
                                           pValueFUN = hMean::kTRMu)
     HM_ktrial_add <- hMean::hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"], 
-                                         tau2 = REML$tau2, alternative = "none", distr = "chisq", # distr is not actually used
+                                         tau2 = REML$tau2, alternative = "none",
                                          heterogeneity = "additive", check_inputs = TRUE,
                                          pValueFUN = hMean::kTRMu)
     
@@ -323,6 +326,7 @@ sim2CIs <- function(x){
                             HM_tau2_f$CI[,"lower"],
                             HM_phi_chisq$CI[,"lower"],
                             HM_phi_f$CI[,"lower"],
+                            HM_ktrial_none$CI[,"lower"],
                             HM_ktrial_add$CI[,"lower"],
                             HM_ktrial_mult$CI[,"lower"]),
                   upper = c(HC$ci.ub,
@@ -338,6 +342,7 @@ sim2CIs <- function(x){
                             HM_tau2_f$CI[,"upper"],
                             HM_phi_chisq$CI[,"upper"],
                             HM_phi_f$CI[,"upper"],
+                            HM_ktrial_none$CI[,"upper"],
                             HM_ktrial_add$CI[,"upper"],
                             HM_ktrial_mult$CI[,"upper"]),
                   method = c("Henmy & Copas CI",
@@ -353,6 +358,7 @@ sim2CIs <- function(x){
                              rep("Harmonic Mean Additive CI (f)", nrow(HM_tau2_f$CI)),
                              rep("Harmonic Mean Multiplicative CI (chisq)", nrow(HM_phi_chisq$CI)),
                              rep("Harmonic Mean Multiplicative CI (f)", nrow(HM_phi_f$CI)),
+                             rep("k-Trials CI", nrow(HM_ktrial_none$CI)),
                              rep("k-Trials Additive CI", nrow(HM_ktrial_add$CI)),
                              rep("k-Trials Multiplicative CI", nrow(HM_ktrial_mult$CI))
                              ))
@@ -361,15 +367,16 @@ sim2CIs <- function(x){
                 gamma = tibble("method" = c("Harmonic Mean CI (chisq)", "Harmonic Mean CI (f)", 
                                             "Harmonic Mean Additive CI (chisq)", "Harmonic Mean Additive CI (f)", 
                                             "Harmonic Mean Multiplicative CI (chisq)", "Harmonic Mean Multiplicative CI (f)",
-                                            "k-Trials Additive CI", "k-Trials Multiplicative CI"),
+                                            "k-Trials CI", "k-Trials Additive CI", "k-Trials Multiplicative CI"),
                                "gamma_min" = c(min(HM_chisq$gamma[,2]), min(HM_f$gamma[,2]), 
                                                min(HM_tau2_chisq$gamma[,2]), min(HM_tau2_f$gamma[,2]),
                                                min(HM_phi_chisq$gamma[,2]), min(HM_phi_f$gamma[,2]),
-                                               min(HM_ktrial_add$gamma[,2]), min(HM_ktrial_mult$gamma[,2])),
+                                               min(HM_ktrial_none$gamma[,2]), min(HM_ktrial_add$gamma[,2]), min(HM_ktrial_mult$gamma[,2])),
                                "x_gamma_min" = c(HM_chisq$gamma[which.min(HM_chisq$gamma[,2]),1], HM_f$gamma[which.min(HM_f$gamma[,2]),1],
                                                  HM_tau2_chisq$gamma[which.min(HM_tau2_chisq$gamma[,2]),1], HM_tau2_f$gamma[which.min(HM_tau2_f$gamma[,2]),1],
                                                  HM_phi_chisq$gamma[which.min(HM_phi_chisq$gamma[,2]),1], HM_phi_f$gamma[which.min(HM_phi_f$gamma[,2]),1],
-                                                 HM_ktrial_add$gamma[which.min(HM_ktrial_add$gamma[,2]),1], HM_ktrial_mult$gamma[which.min(HM_ktrial_add$gamma[,2]),1])),
+                                                 HM_ktrial_none$gamma[which.min(HM_ktrial_none$gamma[,2]),1],
+                                                 HM_ktrial_add$gamma[which.min(HM_ktrial_add$gamma[,2]),1], HM_ktrial_mult$gamma[which.min(HM_ktrial_mult$gamma[,2]),1])),
                 theta = x[, "theta"],
                 delta = x[, "delta"],
                 effect = attributes(x)$effect)
@@ -429,7 +436,7 @@ CI2measures <- function(x, pars) {
         coverage_prediction <- as.numeric(any(x_sub[,"lower"] <= new_study & new_study <= x_sub[,"upper"]))
         
         # get gamma_min to later attach it to the function output
-        if(grepl("Harmonic Mean CI|Harmonic Mean Additive CI|Harmonic Mean Multiplicative CI|k-Trials Additive CI|k-Trials Multiplicative CI", methods[i])){
+        if(grepl("Harmonic Mean.*CI|k-Trials.*CI", methods[i])){
             gamma_min <- x$gamma %>% filter(method == methods[i]) %>% pull(gamma_min)
         } else {
             gamma_min <- NA_real_
@@ -449,10 +456,10 @@ CI2measures <- function(x, pars) {
         }
         
         # count number of intervals
-        if(all(is.na(x_sub))){
-            n <- NA_integer_
-        } else {
+        if(grepl("Harmonic Mean.*CI|k-Trials.*CI", methods[i])){
             n <- nrow(x_sub)
+        } else {
+            n <- NA_real_
         }
         
        out <- tibble(method = methods[i], 
@@ -610,7 +617,7 @@ sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time
                             cbind(pars, .),
                         
                         ## summary statistics for gamma_min
-                        av %>% filter(grepl("Harmonic Mean CI|Harmonic Mean Additive CI|Harmonic Mean Multiplicative CI|k-Trials Additive CI|k-Trials Multiplicative CI", method)) %>%
+                        av %>% filter(grepl("Harmonic Mean.*CI|k-Trials.*CI", method)) %>%
                             group_by(method) %>%
                             summarize(across("gammaMin", 
                                              .fns = list(min = function(x) min(x, na.rm = FALSE), 
@@ -627,7 +634,7 @@ sim <- function(grid, N = 1e4, cores = detectCores(), seed = as.numeric(Sys.time
                             cbind(pars, .),
                         
                         ## relative frequency for n
-                        av %>% filter(grepl("Harmonic Mean CI|Harmonic Mean Additive CI|Harmonic Mean Multiplicative CI|k-Trials Additive CI|k-Trials Multiplicative CI", method)) %>%
+                        av %>% filter(grepl("Harmonic Mean.*CI|k-Trials.*CI", method)) %>%
                             group_by(method) %>%
                             summarize(across("n", 
                                              .fns = list("1" = function(x) sum(x == 1),
