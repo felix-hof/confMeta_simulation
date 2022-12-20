@@ -65,7 +65,8 @@ out_gammamin <- out %>%
 out_n <- out %>% 
     bind_rows() %>% 
     filter(grepl("^n", measure), 
-           !grepl("_mean$", measure)) %>% 
+           !grepl("_mean$", measure),
+           !grepl("\\(f\\)", method)) %>% 
     mutate(measure = gsub("n_", "", measure),
            measure = gsub("gt", "> ", measure),
            measure = ordered(measure, levels = rev(c("> 9", as.character(9:1)))),
@@ -74,7 +75,7 @@ out_n <- out %>%
 # Prepare data (summary) ----
 out_sum <- out_meanplots %>% 
     filter(grepl("coverage", measure),
-           grepl("Additive|Multiplicative|Hartung|Henmy|REML", method),
+           grepl("Harmonic Mean|k-Trials|Hartung|Henmy|REML", method),
            !grepl("\\(f\\)", method))
 
 # Set output directory -----
@@ -102,12 +103,12 @@ plotPanels <- function(data,
             {
                 if(measure == "coverage_prediction"){
                     .[] %>% 
-                        filter(grepl("Harmonic Mean|PI", method)) %>% 
+                        filter(grepl("Harmonic Mean|k-Trials|PI", method)) %>% 
                         mutate(method = factor(method, 
                                                levels = c("Harmonic Mean CI (chisq)", "Harmonic Mean Additive CI (chisq)",
                                                           "Harmonic Mean Multiplicative CI (chisq)", "Harmonic Mean CI (f)", 
                                                           "Harmonic Mean Additive CI (f)", "Harmonic Mean Multiplicative CI (f)",
-                                                          "k-Trials Additive CI", "k-Trials Multiplicative CI",
+                                                          "k-Trials CI", "k-Trials Additive CI", "k-Trials Multiplicative CI",
                                                           "Hartung & Knapp PI", "Random Effects, default, REML PI")))
                 } else {
                     .[] %>%
@@ -116,7 +117,7 @@ plotPanels <- function(data,
                                                levels = c("Harmonic Mean CI (chisq)", "Harmonic Mean Additive CI (chisq)",
                                                           "Harmonic Mean Multiplicative CI (chisq)", "Harmonic Mean CI (f)", 
                                                           "Harmonic Mean Additive CI (f)", "Harmonic Mean Multiplicative CI (f)",
-                                                          "k-Trials Additive CI", "k-Trials Multiplicative CI",
+                                                          "k-Trials CI", "k-Trials Additive CI", "k-Trials Multiplicative CI",
                                                           "Hartung & Knapp CI", "Random Effects, default, REML CI", 
                                                           "Henmy & Copas CI")))
                 }
@@ -165,61 +166,64 @@ measure_opts <- out_meanplots %>% pull(measure) %>% unique()
 list_seq <- seq_along(opts)
 
 for(x in list_seq){ # loop over summary (eg. dist)
-    current <- names(opts)[x]
-    current_levels <- opts[[current]]
-    cat("Currently constructing plots for:", current, paste0("(", paste0(current_levels, collapse = ", "), ")"), "\n")
-    grid_others <- expand.grid(opts[list_seq[list_seq != x]], stringsAsFactors = FALSE)
-    for(y in seq_len(nrow(grid_others))){ # loop over all combinations of other parameters (e.g. bias, large, he)
-        # filter the data by current parameter combination
-        filters <- lapply(seq_along(grid_others), function(z){
-            lhs <- names(grid_others)[z]
-            op <- quote(`==`)
-            rhs <- grid_others[y, z]
-            expr(`!!`(op)(!!sym(lhs), !!rhs))
-        })
-        img_data <- out_meanplots %>% filter(!!!filters)
-        for(me in measure_opts){ # loop over different measures
-            img_data %>% 
-                filter(measure == me) %>% 
-                {
-                    if(me == "coverage_prediction"){
-                        ylim <- .[] %>% 
-                            filter(grepl("Harmonic Mean|PI|k-Trials", method)) %>% 
-                            pull(value) %>% 
-                            {c(min(.), max(.))}
-                    } else {
-                        ylim <- .[] %>%
-                            filter(!grepl("PI", method)) %>% 
-                            pull(value) %>% 
-                            {c(min(.), max(.))}
-                    }
-                    lapply(current_levels, function(z){
-                        title <- .[] %>% 
-                            select(-k, -I2, -method, -measure, -value, -all_of(current), -sampleSize) %>% 
-                            distinct() %>% 
-                            bind_cols(!!current := z) %>% 
-                            select(order(colnames(.))) %>% 
-                            make_title()
-                        .[] %>% 
-                            filter(!!sym(current) == z) %>% 
-                            plotPanels(measure = me, by="method") +
-                            ylim(ylim) +
-                            ggtitle(eval(title)) +
-                            theme(text = element_text(size = 9),
-                                  plot.title = element_text(size = 10))
-                    })
-                } %>% 
-                wrap_plots(guides = "collect") &
-                theme(legend.position = "bottom")
-            ggsave(filename = paste0(out_path, "/", me, "/", toupper(current), "_", 
-                                     paste0(paste0(names(grid_others[y, ]), "_", grid_others[y, ]), collapse = "_"),
-                                     ".png"),
-                   width = length(current_levels) * 6.5,
-                   height = 12,
-                   units = "in",
-                   type = "cairo")
-        } 
-    }
+  current <- names(opts)[x]
+  current_levels <- opts[[current]]
+  cat("\n\nCurrently constructing plots for:", current, paste0("(", paste0(current_levels, collapse = ", "), ")"), "\n")
+  cat("\n")
+  grid_others <- expand.grid(opts[list_seq[list_seq != x]], stringsAsFactors = FALSE)
+  for(y in seq_len(nrow(grid_others))){ # loop over all combinations of other parameters (e.g. bias, large, he)
+    # filter the data by current parameter combination
+    filters <- lapply(seq_along(grid_others), function(z){
+      lhs <- names(grid_others)[z]
+      op <- quote(`==`)
+      rhs <- grid_others[y, z]
+      expr(`!!`(op)(!!sym(lhs), !!rhs))
+    })
+    img_data <- out_meanplots %>% filter(!!!filters)
+    for(me in measure_opts){ # loop over different measures
+      img_data %>% 
+        filter(measure == me) %>% 
+        {
+          if(me == "coverage_prediction"){
+            ylim <- .[] %>% 
+              filter(grepl("Harmonic Mean|PI|k-Trials", method)) %>% 
+              pull(value) %>% 
+              {c(min(.), max(.))}
+          } else {
+            ylim <- .[] %>%
+              filter(!grepl("PI", method)) %>% 
+              pull(value) %>% 
+              {c(min(.), max(.))}
+          }
+          lapply(current_levels, function(z){
+            title <- .[] %>% 
+              select(-k, -I2, -method, -measure, -value, -all_of(current), -sampleSize) %>% 
+              distinct() %>% 
+              bind_cols(!!current := z) %>% 
+              select(order(colnames(.))) %>% 
+              make_title()
+            .[] %>% 
+              filter(!!sym(current) == z) %>% 
+              plotPanels(measure = me, by="method") +
+              ylim(ylim) +
+              ggtitle(eval(title)) +
+              theme(text = element_text(size = 9),
+                    plot.title = element_text(size = 10))
+          })
+        } %>% 
+        wrap_plots(guides = "collect") &
+        theme(legend.position = "bottom")
+      filename <- paste0(out_path, "/", me, "/", toupper(current), "_", 
+                         paste0(paste0(names(grid_others[y, ]), "_", grid_others[y, ]), collapse = "_"),
+                         ".png")
+      cat('\33[2K\rMaking file: ', filename)
+      ggsave(filename = filename,
+             width = length(current_levels) * 6.5,
+             height = 12,
+             units = "in",
+             type = "cairo")
+    } 
+  }
 }
 
 ## gamma_min summary statistics -----------------------------------------------------------
@@ -254,7 +258,7 @@ for(x in list_seq){ # loop over summary (eg. dist)
             mutate(method = factor(method, 
                                    levels = c("Harmonic Mean CI (chisq)", "Harmonic Mean Additive CI (chisq)", "Harmonic Mean Multiplicative CI (chisq)", 
                                               #"Harmonic Mean CI (f)", "Harmonic Mean Additive CI (f)", "Harmonic Mean Multiplicative CI (f)",
-                                              #"k-Trials Additive CI", "k-Trials Multiplicative CI"
+                                              "k-Trials CI", "k-Trials Additive CI", "k-Trials Multiplicative CI"
                                               )))
         lapply(current_levels, function(z){
             title <- img_data %>% 
@@ -344,8 +348,8 @@ for(x in list_seq){ # loop over summary (eg. dist)
             filter(!!!filters) %>% 
             mutate(method = factor(method, 
                                    levels = c("Harmonic Mean CI (chisq)", "Harmonic Mean Additive CI (chisq)", "Harmonic Mean Multiplicative CI (chisq)", 
-                                              "Harmonic Mean CI (f)", 
-                                              "Harmonic Mean Additive CI (f)", "Harmonic Mean Multiplicative CI (f)")))
+                                              #"Harmonic Mean CI (f)", "Harmonic Mean Additive CI (f)", "Harmonic Mean Multiplicative CI (f)",
+                                              "k-Trials CI", "k-Trials Additive CI", "k-Trials Multiplicative CI")))
         lapply(current_levels, function(z){
             title <- img_data %>% 
                 filter(!!sym(current) == z) %>% 
