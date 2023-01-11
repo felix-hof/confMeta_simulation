@@ -6,95 +6,103 @@
 ## we make one or two studies ten times the size of the others.
 ##
 ## It provides the functions:
-## - simREbias():   simulates data from a random effects model with selection bias
-##                  for meta analyses, where the effects (theta) describe mean differences.  
-## - simRE():       simulates data from a random effects model for meta analyses,
-##                  where the effects (theta) describe mean differences.  
-## - pAccept():     computes the probability of publishing a study under the assumption
-##                  of a 'moderate' and 'strong' publication bias as mentioned in
-##                  Henmi & Copas, 2009.
+## - simREbias():   simulates data from a random effects model with selection
+##                  bias
+##                  for meta analyses, where the effects (theta) describe mean
+##                  differences.
+## - simRE():       simulates data from a random effects model for meta
+##                  analyses, where the effects (theta) describe mean
+##                  differences.
+## - pAccept():     computes the probability of publishing a study under the
+##                  assumption of a 'moderate' and 'strong' publication bias
+##                  as mentioned in Henmi & Copas, 2009.
 ## - sim2CIs():     takes data from simRE() as input and computes several
 ##                  confidence intervals for the combined effect estimate
 ## - CI2measures(): takes output from simRE() and sim2CI() and computes several
 ##                  quality measures of the CIs (width, coverage, score)
-## - sim():         run entire simulation: generate data, compute CIs, assess CIs
+## - sim():         run entire simulation: generate data, compute CIs,
+##                  assess CIs
 ##
 ## Florian Gerber, florian.gerber@uzh.ch, Oct. 14, 2021
 rm(list = ls())
 library(meta)
 devtools::install_github("felix-hof/hMean")
 library(hMean)
-library(tidyverse); theme_set(theme_bw())
+library(tidyverse)
 library(rlang)
 library(doParallel)
 library(doRNG)
-library(RhpcBLASctl); blas_set_num_threads(1) # multi threading of BLAS
+library(RhpcBLASctl)
+blas_set_num_threads(1) # multi threading of BLAS
 library(tictoc)
 library(metafor)
 library(sn)
 
-#' Simulate effect estimates and their standard errors using a random effects model
+#' Simulate effect estimates and their standard errors using a random effects
+#' model
 #'
-#' Simulate effect estimates and their standard error using a random effects model.
+#' Simulate effect estimates and their standard error using a random effects
+#' model.
 #' @param k number of trials
 #' @param sampleSize sample size of the trial
 #' @param effect effect size
 #' @param I2 Higgin's I^2 heterogeneity measure
 #' @param heterogeneity The heterogeneity model, the studies are simulated from.
 #' Either "additive" or "multiplicative".
-#' @param dist distribution to simulate the study effect. Either "t" or "Gaussian".
+#' @param dist distribution to simulate the study effect. Either "t" or
+#' "Gaussian".
 #' the sample size as specified by \code{sampleSize}.
 #' @return a matrix \code{k} x 2 matrix with columns
 #' \code{theta} (effect estimates) and
 #' \code{se} (standard errors).
-simRE <- function(k, sampleSize, effect, I2, 
+simRE <- function(k, sampleSize, effect, I2,
                   heterogeneity,
                   dist,
                   large) {
-    
+
     # get args
     n <- rep(sampleSize, k)
     # include large studies
-    if(large != 0) n[seq_len(large)] <- n[seq_len(large)] * 10
+    if (large != 0) n[seq_len(large)] <- n[seq_len(large)] * 10
     # stuff for additive model
-    if(heterogeneity == "additive"){
-        eps2 <- 1/k * sum(2/n)
-        tau2 <- eps2 * I2/(1 - I2)
-        if(dist == "t") {
+    if (heterogeneity == "additive") {
+        eps2 <- 1 / k * sum(2 / n)
+        tau2 <- eps2 * I2 / (1 - I2)
+        if (dist == "t") {
             ## the sn::rst(xi=0, omega, nu) distribution has variance
             ## omega^2 nu/(nu-2) (if nu>2)
             ## where nu is the degrees of freedom (dof).
-            ## So if we want the variance to be tau^2, then 
+            ## So if we want the variance to be tau^2, then
             ## omega^2 = tau^2 * (nu-2)/nu
             ## We use nu=4 dof then omega^2 = tau^2/2, so half as
             ## large as the heterogeneity variance under normality.
-            delta <- rst(n = k, xi = effect, omega = sqrt(tau2/2), nu = 4)
+            delta <- rst(n = k, xi = effect, omega = sqrt(tau2 / 2), nu = 4)
         } else {
             delta <- rnorm(n = k, mean = effect, sd = sqrt(tau2))
         }
-        theta <- rnorm(n = k, mean = delta, sd = sqrt(2/n))
-        
+        theta <- rnorm(n = k, mean = delta, sd = sqrt(2 / n))
+
     } else { ## multiplicative model
-        phi <- 1/(1 - I2)
-        eps2 <- 1/k * sum(2/n)
+        phi <- 1 / (1 - I2)
+        eps2 <- 1 / k * sum(2 / n)
         tau2 <- eps2 * (phi - 1)
-        if(dist == "t") {
+        if (dist == "t") {
             ## the sn::rst(xi=0, omega, nu) distribution has variance
             ## omega^2 nu/(nu-2) (if nu>2)
             ## where nu is the degrees of freedom (dof).
-            ## So if we want the variance to be tau^2, then 
+            ## So if we want the variance to be tau^2, then
             ## omega^2 = tau^2 * (nu-2)/nu
             ## We use nu=4 dof then omega^2 = tau^2/2, so half as
             ## large as the heterogeneity variance under normality.
             ## sample sequentially with marginal variance equal to
-            ## (phi-1)*2/n + 2/n = phi*2/n 
-            delta <- rst(n = k, xi = effect, omega = sqrt(tau2/2), nu = 4)
+            ## (phi-1)*2/n + 2/n = phi*2/n
+            delta <- rst(n = k, xi = effect, omega = sqrt(tau2 / 2), nu = 4)
         } else {  ## Gaussian, sample directly from marginal
             delta <- rnorm(n = k, mean = effect, sd = sqrt(tau2))
         }
-        theta <- rnorm(n = k, mean = delta, sd = sqrt(2/n))
+        theta <- rnorm(n = k, mean = delta, sd = sqrt(2 / n))
     }
-    se <- sqrt(rchisq(n = k, df = 2*n - 2) / (n*(n - 1)))
+    se <- sqrt(rchisq(n = k, df = 2 * n - 2) / (n * (n - 1)))
     o <- cbind("theta" = theta, "se" = se, "delta" = delta)
     rownames(o) <- NULL
     return(o)
@@ -110,43 +118,46 @@ simRE <- function(k, sampleSize, effect, I2,
 #' @param theta vector of study effects
 #' @param se vector of study effects standard errors
 #' @param bias either 'strong' or 'moderate'.
-#' Indicating the amount of publication bias. 
+#' Indicating the amount of publication bias.
 #' @return probabilities of publishing the studies
 #' @examples
 #' pAccept(theta  = c(0, 0, 1, 1, 2, 2),
 #'         sigma2 = c(1, 2, 1, 2, 1, 2), bias = "moderate")
 #' pAccept(theta  = c(0, 0, 1, 1, 2, 2),
 #'         sigma2 = c(1, 2, 1, 2, 1, 2), bias = "strong")
-pAccept <- function(theta, se, bias){
+pAccept <- function(theta, se, bias) {
     ## Begg & Mazumdar, Biometrics, 1994
     ## moderate bias: beta = 4, gamma = 3
     ## strong bias:   beta = 4, gamma = 1.5
-    
-    if(bias == "moderate"){
+
+    if (bias == "moderate") {
         beta <- 4
         gamma <- 3
     } else {
         beta <- 4
         gamma <- 1.5
     }
-    
+
     exp(-beta * (dnorm(-theta / se))^gamma)
 }
 
-#' Simulate effect estimates and their standard errors using a random effects model
-#' under none, moderate, or strong publication bias
+#' Simulate effect estimates and their standard errors using a random effects
+#' model under none, moderate, or strong publication bias
 #'
 #' @param k number of trials
 #' @param sampleSize sample size of the trial
 #' @param effect effect size
 #' @param I2 Higgin's I^2 heterogeneity measure
-#' #' @param heterogeneity The heterogeneity model, the studies are simulated from.
+#' @param heterogeneity The heterogeneity model, the studies are simulated from.
 #' Either "additive" or "multiplicative".
-#' @param dist distribution to simulate the study effect. Either "t" or "Gaussian".
-#' @param large A number in \code{c(0,1,2)} indicating the number of studies that have ten times
-#' the sample size as specified by \code{sampleSize}. Publication bias is only applied to the smaller
-#' studies with sample size specified by \code{sampleSize}. 
-#' @param bias either 'none', 'moderate' or 'strong' as used in Henmi & Copas (2010).
+#' @param dist distribution to simulate the study effect. Either "t" or
+#' "Gaussian".
+#' @param large A number in \code{c(0,1,2)} indicating the number of studies
+#' that have ten times the sample size as specified by \code{sampleSize}.
+#' Publication bias is only applied to the smaller studies with sample size
+#' specified by \code{sampleSize}.
+#' @param bias either 'none', 'moderate' or 'strong' as used in
+#' Henmi & Copas (2010).
 #' @references
 #' Henmi, M. and Copas, J. B. (2010). Confidence intervals for random effects
 #' meta-analysis and robustness to publication bias. Statistics in Medicine,
@@ -158,17 +169,19 @@ pAccept <- function(theta, se, bias){
 #' simREbias(4, sampleSize= 50, effect=.2, I2=.3, dist="Gaussian", large=0)
 #' simREbias(4, sampleSize= 50, effect=.2, I2=.3, dist="Gaussian", large=1)
 #' simREbias(4, sampleSize= 50, effect=.2, I2=.3, dist="Gaussian", large=2)
-#' simREbias(4, sampleSize= 50, effect=.2, I2=.3, dist="Gaussian", large=2, bias = "moderate")
-#' simREbias(4, sampleSize= 50, effect=.2, I2=.3, dist="Gaussian", large=1, bias = "strong")
+#' simREbias(4, sampleSize= 50, effect=.2, I2=.3, dist="Gaussian", large=2,
+#'           bias = "moderate")
+#' simREbias(4, sampleSize= 50, effect=.2, I2=.3, dist="Gaussian",
+#'           large=1, bias = "strong")
 simREbias <- function(k, sampleSize, effect, I2,
                       heterogeneity = c("additive", "multiplicative"),
-                      dist = c("t", "Gaussian"), 
+                      dist = c("t", "Gaussian"),
                       large,
                       bias = c("none", "moderate", "strong"),
                       verbose = TRUE,
-                      check_inputs = TRUE){
+                      check_inputs = TRUE) {
     # input checks
-    if(check_inputs){
+    if (check_inputs) {
         stopifnot(length(k) == 1L,
                   is.numeric(k),
                   is.numeric(sampleSize),
@@ -190,39 +203,42 @@ simREbias <- function(k, sampleSize, effect, I2,
                   is.numeric(large),
                   length(large) == 1L,
                   is.finite(large),
-                  large %in% c(0,1,2),
+                  large %in% c(0, 1, 2),
                   is.character(bias),
                   length(bias) == 1L,
                   !is.na(bias),
-                  
                   k >= large)
     }
-    
+
     bias <- match.arg(bias)
     dist <- match.arg(dist)
     heterogeneity <- match.arg(heterogeneity)
 
-    if(bias == "none"){
-        o <- simRE(k = k, sampleSize = sampleSize, effect = effect, I2 = I2, heterogeneity = heterogeneity, dist = dist, large = large)
+    if (bias == "none") {
+        o <- simRE(k = k, sampleSize = sampleSize, effect = effect, I2 = I2,
+            heterogeneity = heterogeneity, dist = dist, large = large)
         ## add attributes and return
         attr(o, "heterogeneity") <- heterogeneity
         attr(o, which = "effect") <- effect
         return(o)
     }
-        
-    ## first ignore the 'large' 
-    o <- simRE(k = k * 3, sampleSize = sampleSize, effect = effect, I2 = I2, heterogeneity = heterogeneity, dist = dist, large = 0)
-    pa <- pAccept(theta = o[,"theta"], se = o[,"se"], bias = bias)
+
+    ## first ignore the 'large'
+    o <- simRE(k = k * 3, sampleSize = sampleSize, effect = effect, I2 = I2,
+        heterogeneity = heterogeneity, dist = dist, large = 0)
+    pa <- pAccept(theta = o[, "theta"], se = o[, "se"], bias = bias)
     keep <- rbernoulli(n = k * 3, p = pa)
-    while(k > sum(keep)) {
-        if(verbose) cat(".")
-        o2 <- simRE(k = k*3, sampleSize = sampleSize, effect = effect, I2 = I2, heterogeneity = heterogeneity, dist = dist,  large = 0)
-        pa2 <- pAccept(theta = o2[,"theta"], se = o2[,"se"], bias = bias)
-        keep2 <- rbernoulli(n = k * 3, p = pa2)
+    while (k > sum(keep)) {
+        if (verbose) cat(".")
+        o2 <- simRE(k = k * 3, sampleSize = sampleSize, effect = effect,
+            I2 = I2, heterogeneity = heterogeneity, dist = dist,  large = 0)
+        pa2 <- pAccept(theta = o2[, "theta"], se = o2[, "se"], bias = bias)
+        keep2 <- rbinom(n = k * 3, size = 1, p = pa2)
+        #keep2 <- rbernoulli(n = k * 3, p = pa2)
         o <- rbind(o, o2)
         keep <- c(keep, keep2)
     }
-    o <- o[keep,][1:k,]
+    o <- o[keep, ][1:k, ]
 
     ## add large studies
     if(large != 0){
@@ -249,14 +265,14 @@ sim2CIs <- function(x){
                                             control = list(maxiter = 10000, stepadj = 0.25)))
     
     ## standard metagen with REML estimation of tau
-    REML <- metagen(TE = x[, "theta"], seTE = x[, "se"], sm = "MD", 
-                    method.tau = "REML", 
-                    control = list(maxiter = 10000, stepadj = 0.25))
+    REML <- meta::metagen(TE = x[, "theta"], seTE = x[, "se"], sm = "MD", 
+                          method.tau = "REML", 
+                          control = list(maxiter = 10000, stepadj = 0.25))
     
     ## Hartung & Knapp
-    HK <- metagen(TE = x[, "theta"], seTE = x[, "se"], sm = "MD", 
-                  method.tau = "REML", hakn = TRUE,
-                  control = list(maxiter = 10000, stepadj = 0.25))
+    HK <- meta::metagen(TE = x[, "theta"], seTE = x[, "se"], sm = "MD", 
+                        method.tau = "REML", hakn = TRUE,
+                        control = list(maxiter = 10000, stepadj = 0.25))
     
     ## HMean2sided
     # if(nrow(x) <= 5) {
