@@ -247,7 +247,7 @@ simREbias <- function(k,
         o <- rbind(o, o2)
         keep <- c(keep, keep2)
     }
-    o <- o[keep, ][1:k, ]
+    o <- o[as.logical(keep), ][1:k, ]
 
     ## add large studies
     if (large != 0) {
@@ -272,23 +272,30 @@ simREbias <- function(k,
 #' @param x matrix output from \code{simRE}.
 #' @return a tibble with columns \code{lower}, \code{upper}, and \code{method}.
 sim2CIs <- function(x) {
-    
+
     ## Set control parameters for metafor and meta functions
-    #control <- switch()
+    # control <- switch(
+    #     as.character(nrow(x)),
+    #     "50" = list(maxiter = 1e4, stepadj = 0.25),
+    #     "20" = list(maxiter = 1e4, stepadj = 0.5),
+    #     "10" = list(maxiter = 1e4, stepadj = 0.5),
+    #     list(maxiter = 1e4, stepadj = 1)
+    # )
+    control <- list(maxiter = 1e4, stepadj = 0.25)
 
     ## Henmi & Copas confidence Interval
     HC <- metafor::hc(object = metafor::rma(yi = x[, "theta"], sei = x[, "se"],
-        control = list(maxiter = 10000, stepadj = 0.25)))
+        control = control))
 
     ## standard metagen with REML estimation of tau
     REML <- meta::metagen(TE = x[, "theta"], seTE = x[, "se"], sm = "MD",
         method.tau = "REML",
-        control = list(maxiter = 10000, stepadj = 0.25))
+        control = control)
 
-    ## Hartung & Knapp
+    ## Hartung - Knapp
     HK <- meta::metagen(TE = x[, "theta"], seTE = x[, "se"], sm = "MD",
         method.tau = "REML", hakn = TRUE,
-        control = list(maxiter = 10000, stepadj = 0.25))
+        control = control)
 
     ## HMean2sided
     # if(nrow(x) <= 5) {
@@ -345,6 +352,19 @@ sim2CIs <- function(x) {
         heterogeneity = "additive", check_inputs = TRUE,
         pValueFUN = hMean::kTRMu)
 
+    ## HMean_None with k-trials (multiplicative with estimated phi)
+    HM_pearson_none <- hMean::hMeanChiSqCI(thetahat = x[, "theta"],
+        se = x[, "se"], alternative = "none", heterogeneity = "none",
+        check_inputs = TRUE, pValueFUN = hMean::pPearsonMu)
+    HM_pearson_mult <- hMean::hMeanChiSqCI(thetahat = x[, "theta"],
+        se = x[, "se"], phi = phi, alternative = "none",
+        heterogeneity = "multiplicative", check_inputs = TRUE,
+        pValueFUN = hMean::pPearsonMu)
+    HM_pearson_add <- hMean::hMeanChiSqCI(thetahat = x[, "theta"],
+        se = x[, "se"], tau2 = REML$tau2, alternative = "none",
+        heterogeneity = "additive", check_inputs = TRUE,
+        pValueFUN = hMean::pPearsonMu)
+
     tib <- tibble(
         lower = c(
             HC$ci.lb,
@@ -352,8 +372,6 @@ sim2CIs <- function(x) {
             REML$lower.predict,
             HK$lower.random,
             HK$lower.predict,
-            #HM2_chisq$CI[,"lower"],
-            #HM2_f$CI[,"lower"],
             HM_chisq$CI[, "lower"],
             HM_f$CI[, "lower"],
             HM_tau2_chisq$CI[, "lower"],
@@ -362,7 +380,10 @@ sim2CIs <- function(x) {
             HM_phi_f$CI[, "lower"],
             HM_ktrial_none$CI[, "lower"],
             HM_ktrial_add$CI[, "lower"],
-            HM_ktrial_mult$CI[, "lower"]
+            HM_ktrial_mult$CI[, "lower"],
+            HM_pearson_none$CI[, "lower"],
+            HM_pearson_add$CI[, "lower"],
+            HM_pearson_mult$CI[, "lower"]
         ),
         upper = c(
             HC$ci.ub,
@@ -370,8 +391,6 @@ sim2CIs <- function(x) {
             REML$upper.predict,
             HK$upper.random,
             HK$upper.predict,
-            #HM2_chisq$CI[,"upper"],
-            #HM2_f$CI[,"upper"],
             HM_chisq$CI[, "upper"],
             HM_f$CI[, "upper"],
             HM_tau2_chisq$CI[, "upper"],
@@ -380,7 +399,10 @@ sim2CIs <- function(x) {
             HM_phi_f$CI[, "upper"],
             HM_ktrial_none$CI[, "upper"],
             HM_ktrial_add$CI[, "upper"],
-            HM_ktrial_mult$CI[, "upper"]
+            HM_ktrial_mult$CI[, "upper"],
+            HM_pearson_none$CI[, "upper"],
+            HM_pearson_add$CI[, "upper"],
+            HM_pearson_mult$CI[, "upper"]
         ),
         method = c(
             "Henmy & Copas CI",
@@ -399,7 +421,10 @@ sim2CIs <- function(x) {
             rep("Harmonic Mean Multiplicative CI (f)", nrow(HM_phi_f$CI)),
             rep("k-Trials CI", nrow(HM_ktrial_none$CI)),
             rep("k-Trials Additive CI", nrow(HM_ktrial_add$CI)),
-            rep("k-Trials Multiplicative CI", nrow(HM_ktrial_mult$CI))
+            rep("k-Trials Multiplicative CI", nrow(HM_ktrial_mult$CI)),
+            rep("Pearson CI", nrow(HM_pearson_none$CI)),
+            rep("Pearson Additive CI", nrow(HM_pearson_add$CI)),
+            rep("Pearson Multiplicative CI", nrow(HM_pearson_mult$CI))
         )
     )
     out <- list(
@@ -413,14 +438,18 @@ sim2CIs <- function(x) {
                 "Harmonic Mean Multiplicative CI (chisq)",
                 "Harmonic Mean Multiplicative CI (f)",
                 "k-Trials CI", "k-Trials Additive CI",
-                "k-Trials Multiplicative CI"
+                "k-Trials Multiplicative CI",
+                "Pearson CI", "Pearson Additive CI",
+                "Pearson Multiplicative CI"
             ),
             gamma_min = c(
                 min(HM_chisq$gamma[, 2]), min(HM_f$gamma[, 2]),
                 min(HM_tau2_chisq$gamma[, 2]), min(HM_tau2_f$gamma[, 2]),
                 min(HM_phi_chisq$gamma[, 2]), min(HM_phi_f$gamma[, 2]),
                 min(HM_ktrial_none$gamma[, 2]), min(HM_ktrial_add$gamma[, 2]),
-                min(HM_ktrial_mult$gamma[, 2])
+                min(HM_ktrial_mult$gamma[, 2]),
+                min(HM_pearson_none$gamma[, 2]), min(HM_pearson_add$gamma[, 2]),
+                min(HM_pearson_mult$gamma[, 2])
             ),
             x_gamma_min = c(
                 HM_chisq$gamma[which.min(HM_chisq$gamma[, 2]), 1],
@@ -431,7 +460,10 @@ sim2CIs <- function(x) {
                 HM_phi_f$gamma[which.min(HM_phi_f$gamma[, 2]), 1],
                 HM_ktrial_none$gamma[which.min(HM_ktrial_none$gamma[, 2]), 1],
                 HM_ktrial_add$gamma[which.min(HM_ktrial_add$gamma[, 2]), 1],
-                HM_ktrial_mult$gamma[which.min(HM_ktrial_mult$gamma[, 2]), 1]
+                HM_ktrial_mult$gamma[which.min(HM_ktrial_mult$gamma[, 2]), 1],
+                HM_pearson_none$gamma[which.min(HM_pearson_none$gamma[, 2]), 1],
+                HM_pearson_add$gamma[which.min(HM_pearson_add$gamma[, 2]), 1],
+                HM_pearson_mult$gamma[which.min(HM_pearson_mult$gamma[, 2]), 1]
             )
         ),
         theta = x[, "theta"],
@@ -480,7 +512,7 @@ CI2measures <- function(x, pars) {
 
         # calculate how many times at least one study-specific effect is covered
         found <- FALSE
-        for (z in x$delta){
+        for (z in x$delta) {
           if (any(x_sub[, "lower"] <= z & z <= x_sub[, "upper"])) {
             found <- TRUE
             break
@@ -514,7 +546,7 @@ CI2measures <- function(x, pars) {
         ))
 
         # get gamma_min to later attach it to the function output
-        if (grepl("Harmonic Mean.*CI|k-Trials.*CI", methods[i])) {
+        if (grepl("Harmonic Mean.*CI|k-Trials.*CI|Pearson.*CI", methods[i])) {
             gamma_min <- x$gamma %>%
                 filter(method == methods[i]) %>%
                 pull(gamma_min)
@@ -540,7 +572,7 @@ CI2measures <- function(x, pars) {
         }
 
         # count number of intervals
-        if (grepl("Harmonic Mean.*CI|k-Trials.*CI", methods[i])) {
+        if (grepl("Harmonic Mean.*CI|k-Trials.*CI|Pearson.*CI", methods[i])) {
             n <- nrow(x_sub)
         } else {
             n <- NA_real_
@@ -564,10 +596,11 @@ CI2measures <- function(x, pars) {
     }
 }
 
+# This function is called when an error happens
 error_function <- function(cond, pars, error_obj = NULL, fun_name) {
     text <- capture.output(cond)
     out_msg <- paste0(
-        "Error in ", fun_name , "iteration: ", i, "\n\n",
+        "Error in ", fun_name, "iteration: ", i, "\n\n",
         "Parameters are:\n\n",
         paste0(paste0(names(pars), ": ", pars[1, ]), collapse = "\n"),
         "\n\nThe error message is:\n", text, "\n\n",
@@ -609,7 +642,8 @@ sim <- function(
     grid,
     N = 1e4,
     cores = detectCores(),
-    seed = as.numeric(Sys.time())) {
+    seed = as.numeric(Sys.time())
+) {
 
     types <- vapply(grid, typeof, character(1L), USE.NAMES = TRUE)
 
@@ -840,7 +874,8 @@ grid <- expand.grid(
 
 ## run simulation, e.g., on the Rambo server of I-MATH
 tic()
-out <- sim(grid = grid, N = 1e5, cores = 120)
+# out <- sim(grid = grid, N = 1e5, cores = 120)
+out <- sim(grid = grid[688:703, ], N = 30, cores = 15)
 toc()
 
 ## save results
