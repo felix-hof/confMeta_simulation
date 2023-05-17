@@ -52,7 +52,7 @@ if(length(libs) == 0){
 	  out <- tryCatch({install.packages(x); 0L},
 		   warning = function(w) "NA on CRAN",
 		   error = function(e) "NA on CRAN")
-	  if(out == "NA on CRAN") devtools::install_github(paste0("felix-hof/", x))
+	  if(out == "NA on CRAN") remotes::install_github(paste0("felix-hof/", x))
 	  return(NULL)
 	})
 }
