@@ -26,7 +26,7 @@
 ## Florian Gerber, florian.gerber@uzh.ch, Oct. 14, 2021
 rm(list = ls())
 library(meta)
-devtools::install_github("felix-hof/hMean")
+remotes::install_github("felix-hof/hMean")
 library(hMean)
 library(tidyverse)
 library(rlang)
