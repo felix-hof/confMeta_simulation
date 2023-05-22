@@ -1,4 +1,4 @@
-.DEFAULT_GOAL := figs
+.DEFAULT_GOAL := RData/simulate_all.RData
 
 RData/simulate_all.RData: simulate_all.R
 	Rscript install_packages.R && Rscript simulate_all.R 2>&1 | tee simulate_all.Rout
