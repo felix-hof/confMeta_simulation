@@ -873,7 +873,7 @@ sim <- function(
 
                         ## summary statistics for gamma_min
                         av %>%
-                            filter(grepl("Harmonic Mean.*CI|k-Trials.*CI", method)) %>%
+                            filter(grepl("Harmonic Mean.*CI|k-Trials.*CI|Pearson.*CI", method)) %>%
                             group_by(method) %>%
                             summarize(
                                 across(
@@ -899,7 +899,7 @@ sim <- function(
 
                         ## relative frequency for n
                         av %>%
-                            filter(grepl("Harmonic Mean.*CI|k-Trials.*CI", method)) %>%
+                            filter(grepl("Harmonic Mean.*CI|k-Trials.*CI|Pearson.*CI", method)) %>%
                             group_by(method) %>%
                             summarize(
                                 across(
