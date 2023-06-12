@@ -284,18 +284,29 @@ sim2CIs <- function(x) {
     control <- list(maxiter = 1e4, stepadj = 0.25)
 
     ## Henmi & Copas confidence Interval
-    HC <- metafor::hc(object = metafor::rma(yi = x[, "theta"], sei = x[, "se"],
-        control = control))
+    HC <- metafor::hc(
+        object = metafor::rma(yi = x[, "theta"], sei = x[, "se"],
+        control = control)
+    )
 
     ## standard metagen with REML estimation of tau
-    REML <- meta::metagen(TE = x[, "theta"], seTE = x[, "se"], sm = "MD",
+    REML <- meta::metagen(
+        TE = x[, "theta"],
+        seTE = x[, "se"],
+        sm = "MD",
         method.tau = "REML",
-        control = control)
+        control = control
+    )
 
     ## Hartung - Knapp
-    HK <- meta::metagen(TE = x[, "theta"], seTE = x[, "se"], sm = "MD",
-        method.tau = "REML", hakn = TRUE,
-        control = control)
+    HK <- meta::metagen(
+        TE = x[, "theta"],
+        seTE = x[, "se"],
+        sm = "MD",
+        method.tau = "REML",
+        hakn = TRUE,
+        control = control
+    )
 
     ## HMean2sided
     # if(nrow(x) <= 5) {
@@ -315,55 +326,147 @@ sim2CIs <- function(x) {
     ## always additive.
 
     ## HMeanNone (additive model with tau2 = 0)
-    HM_f <- hMean::hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
-        alternative = "none", distr = "f", tau2 = 0,
-        heterogeneity = "additive", check_inputs = TRUE)
-    HM_chisq <- hMean::hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
-        alternative = "none", distr = "chisq", tau2 = 0,
-        heterogeneity = "additive", check_inputs = TRUE)
+    HM_f <- hMean::hMeanChiSqCI(
+        thetahat = x[, "theta"],
+        se = x[, "se"],
+        alternative = "none",
+        pValueFUN_args = list(
+            heterogeneity = "additive",
+            tau2 = 0,
+            distr = "f",
+            check_inputs = FALSE
+        )
+    )
+    HM_chisq <- hMean::hMeanChiSqCI(
+        thetahat = x[, "theta"],
+        se = x[, "se"],
+        alternative = "none",
+        pValueFUN_args = list(
+            heterogeneity = "additive",
+            tau2 = 0,
+            distr = "chisq",
+            check_inputs = FALSE
+        )
+    )
 
     ## HMeanNone_tau2 (additive with estimated tau2)
-    HM_tau2_f <- hMean::hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
-        tau2 = REML$tau2, alternative = "none", distr = "f",
-        heterogeneity = "additive", check_inputs = TRUE)
-    HM_tau2_chisq <- hMean::hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
-        tau2 = REML$tau2, alternative = "none", distr = "chisq",
-        heterogeneity = "additive", check_inputs = TRUE)
+    HM_tau2_f <- hMean::hMeanChiSqCI(
+        thetahat = x[, "theta"],
+        se = x[, "se"],
+        alternative = "none",
+        pValueFUN_args = list(
+            heterogeneity = "additive",
+            tau2 = REML$tau2,
+            distr = "f",
+            check_inputs = FALSE
+        )
+    )
+    HM_tau2_chisq <- hMean::hMeanChiSqCI(
+        thetahat = x[, "theta"],
+        se = x[, "se"],
+        alternative = "none",
+        pValueFUN_args = list(
+            heterogeneity = "additive",
+            tau2 = REML$tau2,
+            distr = "chisq",
+            check_inputs = FALSE
+        )
+    )
 
     ## HMeanNone_phi (multiplicative with estimated phi)
     phi <- hMean::estimatePhi(thetahat = x[, "theta"], se = x[, "se"])
-    HM_phi_f <- hMean::hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
-        phi = phi, alternative = "none", distr = "f",
-        heterogeneity = "multiplicative", check_inputs = TRUE)
-    HM_phi_chisq <- hMean::hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
-        phi = phi, alternative = "none", distr = "chisq",
-        heterogeneity = "multiplicative", check_inputs = TRUE)
+    HM_phi_f <- hMean::hMeanChiSqCI(
+        thetahat = x[, "theta"],
+        se = x[, "se"],
+        alternative = "none",
+        pValueFUN_args = list(
+            heterogeneity = "multiplicative",
+            phi = phi,
+            distr = "f",
+            check_inputs = FALSE
+        )
+    )
+    HM_phi_chisq <- hMean::hMeanChiSqCI(
+        thetahat = x[, "theta"],
+        se = x[, "se"],
+        alternative = "none",
+        pValueFUN_args = list(
+            heterogeneity = "multiplicative",
+            phi = phi,
+            distr = "chisq",
+            check_inputs = FALSE
+        )
+    )
 
     ## HMean_None with k-trials (multiplicative with estimated phi)
-    HM_ktrial_none <- hMean::hMeanChiSqCI(thetahat = x[, "theta"],
-        se = x[, "se"], alternative = "none", heterogeneity = "none",
-        check_inputs = TRUE, pValueFUN = hMean::kTRMu)
-    HM_ktrial_mult <- hMean::hMeanChiSqCI(thetahat = x[, "theta"],
-        se = x[, "se"], phi = phi, alternative = "none",
-        heterogeneity = "multiplicative", check_inputs = TRUE,
-        pValueFUN = hMean::kTRMu)
-    HM_ktrial_add <- hMean::hMeanChiSqCI(thetahat = x[, "theta"],
-        se = x[, "se"], tau2 = REML$tau2, alternative = "none",
-        heterogeneity = "additive", check_inputs = TRUE,
-        pValueFUN = hMean::kTRMu)
+    HM_ktrial_none <- hMean::hMeanChiSqCI(
+        thetahat = x[, "theta"],
+        se = x[, "se"],
+        alternative = "none",
+        pValueFUN = hMean::kTRMu,
+        pValueFUN_args = list(
+            heterogeneity = "none",
+            check_inputs = FALSE
+        )
+    )
+
+    HM_ktrial_mult <- hMean::hMeanChiSqCI(
+        thetahat = x[, "theta"],
+        se = x[, "se"],
+        alternative = "none",
+        pValueFUN = hMean::kTRMu,
+        pValueFUN_args = list(
+            heterogeneity = "multiplicative",
+            phi = phi,
+            check_inputs = FALSE
+        )
+    )
+
+    HM_ktrial_add <- hMean::hMeanChiSqCI(
+        thetahat = x[, "theta"],
+        se = x[, "se"],
+        alternative = "none",
+        pValueFUN = hMean::kTRMu,
+        pValueFUN_args = list(
+            heterogeneity = "additive",
+            tau2 = REML$tau2,
+            check_inputs = FALSE
+        )
+    )
 
     ## HMean_None with k-trials (multiplicative with estimated phi)
-    HM_pearson_none <- hMean::hMeanChiSqCI(thetahat = x[, "theta"],
-        se = x[, "se"], alternative = "none", heterogeneity = "none",
-        check_inputs = TRUE, pValueFUN = hMean::pPearsonMu)
-    HM_pearson_mult <- hMean::hMeanChiSqCI(thetahat = x[, "theta"],
-        se = x[, "se"], phi = phi, alternative = "none",
-        heterogeneity = "multiplicative", check_inputs = TRUE,
-        pValueFUN = hMean::pPearsonMu)
-    HM_pearson_add <- hMean::hMeanChiSqCI(thetahat = x[, "theta"],
-        se = x[, "se"], tau2 = REML$tau2, alternative = "none",
-        heterogeneity = "additive", check_inputs = TRUE,
-        pValueFUN = hMean::pPearsonMu)
+    HM_pearson_none <- hMean::hMeanChiSqCI(
+        thetahat = x[, "theta"],
+        se = x[, "se"],
+        alternative = "none",
+        pValueFUN = hMean::pPearsonMu,
+        pValueFUN_args = list(
+            heterogeneity = "none",
+            check_inputs = FALSE
+        )
+    )
+    HM_pearson_mult <- hMean::hMeanChiSqCI(
+        thetahat = x[, "theta"],
+        se = x[, "se"],
+        alternative = "none",
+        pValueFUN = hMean::pPearsonMu,
+        pValueFUN_args = list(
+            heterogeneity = "multiplicative",
+            phi = phi,
+            check_inputs = TRUE
+        )
+    )
+    HM_pearson_add <- hMean::hMeanChiSqCI(
+        thetahat = x[, "theta"],
+        se = x[, "se"],
+        alternative = "none",
+        pValueFUN = hMean::pPearsonMu,
+        pValueFUN_args = list(
+            heterogeneity = "additive",
+            tau2 = REML$tau2,
+            check_inputs = FALSE
+        )
+    )
 
     tib <- tibble(
         lower = c(
@@ -870,11 +973,9 @@ grid <- expand.grid(
 ) %>%
     arrange(desc(heterogeneity))
 
-#grid <- grid[grid$k == 50, ]
-
 ## run simulation, e.g., on the Rambo server of I-MATH
 tic()
-out <- sim(grid = grid, N = 1e5, cores = 120)
+out <- sim(grid = grid, N = 1e4, cores = 80)
 # out <- sim(grid = grid[688:703, ], N = 30, cores = 15)
 toc()
 
