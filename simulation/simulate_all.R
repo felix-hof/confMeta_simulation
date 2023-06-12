@@ -975,7 +975,7 @@ grid <- expand.grid(
 
 ## run simulation, e.g., on the Rambo server of I-MATH
 tic()
-out <- sim(grid = grid, N = 1e4, cores = 80)
+out <- sim(grid = grid, N = 1e3, cores = 100)
 # out <- sim(grid = grid[688:703, ], N = 30, cores = 15)
 toc()
 
