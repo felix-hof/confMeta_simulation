@@ -26,7 +26,7 @@
 ## Florian Gerber, florian.gerber@uzh.ch, Oct. 14, 2021
 rm(list = ls())
 library(meta)
-remotes::install_github("felix-hof/hMean")
+remotes::install_github("felix-hof/hMean", ref = "dev")
 library(hMean)
 library(tidyverse)
 library(rlang)
@@ -308,165 +308,304 @@ sim2CIs <- function(x) {
         control = control
     )
 
-    ## HMean2sided
-    # if(nrow(x) <= 5) {
-    #     HM2_f <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
-    #                           alternative = "two.sided", distr = "f",
-    #                           heterogeneity = "additive")
-    #     HM2_chisq <- hMeanChiSqCI(thetahat = x[, "theta"], se = x[, "se"],
-    #                               alternative = "two.sided", distr = "chisq",
-    #                               heterogeneity = "additive")
-    # } else {
-    #     HM2_f <- list(CI = cbind(lower = NA_real_, upper = NA_real_))
-    #     HM2_chisq <- list(CI = cbind(lower = NA_real_, upper = NA_real_))
-    # }
-
-    ## Note: these here are actually not really necessary anymore. In an earlier
-    ## version, the argument tau2 defaulted to 0 and the heterogeneity was
-    ## always additive.
-
-    ## HMeanNone (additive model with tau2 = 0)
-    HM_f <- hMean::hMeanChiSqCI(
-        thetahat = x[, "theta"],
-        se = x[, "se"],
-        alternative = "none",
-        pValueFUN_args = list(
-            heterogeneity = "additive",
-            tau2 = 0,
-            distr = "f",
-            check_inputs = FALSE
-        )
+    ## p-value functions to try
+    f <- list(
+        hMean_f = hMean::hMeanChiSqMu,
+        hMean_chisq = hMean::hMeanChiSqMu,
+        k_Trials = hMean::kTRMu,
+        pearson = hMean::pPearsonMu,
+        edgington = hMean::pEdgingtonMu,
+        fisher = hMean::pFisherMu
     )
-    HM_chisq <- hMean::hMeanChiSqCI(
-        thetahat = x[, "theta"],
-        se = x[, "se"],
-        alternative = "none",
-        pValueFUN_args = list(
-            heterogeneity = "additive",
-            tau2 = 0,
-            distr = "chisq",
-            check_inputs = FALSE
-        )
-    )
-
-    ## HMeanNone_tau2 (additive with estimated tau2)
-    HM_tau2_f <- hMean::hMeanChiSqCI(
-        thetahat = x[, "theta"],
-        se = x[, "se"],
-        alternative = "none",
-        pValueFUN_args = list(
-            heterogeneity = "additive",
-            tau2 = REML$tau2,
-            distr = "f",
-            check_inputs = FALSE
-        )
-    )
-    HM_tau2_chisq <- hMean::hMeanChiSqCI(
-        thetahat = x[, "theta"],
-        se = x[, "se"],
-        alternative = "none",
-        pValueFUN_args = list(
-            heterogeneity = "additive",
-            tau2 = REML$tau2,
-            distr = "chisq",
-            check_inputs = FALSE
-        )
-    )
-
-    ## HMeanNone_phi (multiplicative with estimated phi)
-    phi <- hMean::estimatePhi(thetahat = x[, "theta"], se = x[, "se"])
-    HM_phi_f <- hMean::hMeanChiSqCI(
-        thetahat = x[, "theta"],
-        se = x[, "se"],
-        alternative = "none",
-        pValueFUN_args = list(
-            heterogeneity = "multiplicative",
-            phi = phi,
-            distr = "f",
-            check_inputs = FALSE
-        )
-    )
-    HM_phi_chisq <- hMean::hMeanChiSqCI(
-        thetahat = x[, "theta"],
-        se = x[, "se"],
-        alternative = "none",
-        pValueFUN_args = list(
-            heterogeneity = "multiplicative",
-            phi = phi,
-            distr = "chisq",
-            check_inputs = FALSE
-        )
-    )
-
-    ## HMean_None with k-trials (multiplicative with estimated phi)
-    HM_ktrial_none <- hMean::hMeanChiSqCI(
-        thetahat = x[, "theta"],
-        se = x[, "se"],
-        alternative = "none",
-        pValueFUN = hMean::kTRMu,
-        pValueFUN_args = list(
+    ## default args
+    arguments <- list(
+        none = list(
             heterogeneity = "none",
             check_inputs = FALSE
-        )
-    )
-
-    HM_ktrial_mult <- hMean::hMeanChiSqCI(
-        thetahat = x[, "theta"],
-        se = x[, "se"],
-        alternative = "none",
-        pValueFUN = hMean::kTRMu,
-        pValueFUN_args = list(
-            heterogeneity = "multiplicative",
-            phi = phi,
-            check_inputs = FALSE
-        )
-    )
-
-    HM_ktrial_add <- hMean::hMeanChiSqCI(
-        thetahat = x[, "theta"],
-        se = x[, "se"],
-        alternative = "none",
-        pValueFUN = hMean::kTRMu,
-        pValueFUN_args = list(
+        ),
+        additive = list(
             heterogeneity = "additive",
             tau2 = REML$tau2,
             check_inputs = FALSE
+        ),
+        multiplicative = list(
+            heterogeneity = "multiplicative",
+            phi = estimatePhi(thetahat = x[, "theta"], se = x[, "se"]),
+            check_inputs = FALSE
         )
     )
 
-    ## HMean_None with k-trials (multiplicative with estimated phi)
-    HM_pearson_none <- hMean::hMeanChiSqCI(
-        thetahat = x[, "theta"],
-        se = x[, "se"],
-        alternative = "none",
-        pValueFUN = hMean::pPearsonMu,
-        pValueFUN_args = list(
-            heterogeneity = "none",
-            check_inputs = FALSE
-        )
+    out <- vector("list", length(f))
+    names(out) <- names(f)
+    for (k in seq_along(f)) {
+        out[[k]] <- vector("list", length(arguments))
+        names(out[[k]]) <- names(arguments)
+        for (l in seq_along(arguments)) {
+            current_function <- names(f)[k]
+            current_het <- names(arguments)[l]
+            pValueFUN_args <- if (current_function == "hMean_f") {
+                append(arguments[[l]], list(distr = "f"))
+            } else if (current_function == "hMean_chisq") {
+                append(arguments[[l]], list(distr = "chisq"))
+            } else {
+                arguments[[l]]
+            }
+            out[[k]][[l]] <- hMean::hMeanChiSqCI(
+                thetahat = x[, "theta"],
+                se = x[, "se"],
+                alternative = "none",
+                pValueFUN = f[[k]],
+                pValueFUN_args = pValueFUN_args
+            )
+
+        }
+    }
+
+
+    out <- lapply(
+        seq_along(f),
+        function(i, arguments) {
+            fun_name <- names(f)[i]
+            cat(fun_name, "\n")
+            FUN <- f[[i]]
+            lapply(
+                arguments,
+                function(args, FUN, x) {
+                    pValueFUN_args <- if (fun_name == "hMean_f") {
+                        append(args, list(distr = "f"))
+                    } else if (fun_name == "hMean_chisq") {
+                        append(args, list(distr = "chisq"))
+                    } else {
+                        args
+                    }
+                    cat("Calling function: ", fun_name, "\n")
+                    cat("Args are:\n")
+                    print(pValueFUN_args)
+                    hMean::hMeanChiSqCI(
+                        thetahat = x[, "theta"],
+                        se = x[, "se"],
+                        alternative = "none",
+                        pValueFUN = FUN,
+                        pValueFUN_args = pValueFUN_args
+                    )
+                },
+                FUN = FUN,
+                x = x
+            )
+        },
+        arguments = arguments,
+        x = x
     )
-    HM_pearson_mult <- hMean::hMeanChiSqCI(
-        thetahat = x[, "theta"],
-        se = x[, "se"],
-        alternative = "none",
-        pValueFUN = hMean::pPearsonMu,
-        pValueFUN_args = list(
-            heterogeneity = "multiplicative",
-            phi = phi,
-            check_inputs = TRUE
-        )
-    )
-    HM_pearson_add <- hMean::hMeanChiSqCI(
-        thetahat = x[, "theta"],
-        se = x[, "se"],
-        alternative = "none",
-        pValueFUN = hMean::pPearsonMu,
-        pValueFUN_args = list(
-            heterogeneity = "additive",
-            tau2 = REML$tau2,
-            check_inputs = FALSE
-        )
-    )
+
+    lower <- c()
+
+    # ## HMeanNone
+    # HM_none_f <- hMean::hMeanChiSqCI(
+    #     thetahat = x[, "theta"],
+    #     se = x[, "se"],
+    #     alternative = "none",
+    #     pValueFUN_args = list(
+    #         distr = "f",
+    #         check_inputs = FALSE
+    #     )
+    # )
+    # HM_none_chisq <- hMean::hMeanChiSqCI(
+    #     thetahat = x[, "theta"],
+    #     se = x[, "se"],
+    #     alternative = "none",
+    #     pValueFUN_args = list(
+    #         distr = "chisq",
+    #         check_inputs = FALSE
+    #     )
+    # )
+    #
+    # ## HMeanNone (additive with estimated tau2)
+    # HM_add_f <- hMean::hMeanChiSqCI(
+    #     thetahat = x[, "theta"],
+    #     se = x[, "se"],
+    #     alternative = "none",
+    #     pValueFUN_args = list(
+    #         heterogeneity = "additive",
+    #         tau2 = REML$tau2,
+    #         distr = "f",
+    #         check_inputs = FALSE
+    #     )
+    # )
+    # HM_add_chisq <- hMean::hMeanChiSqCI(
+    #     thetahat = x[, "theta"],
+    #     se = x[, "se"],
+    #     alternative = "none",
+    #     pValueFUN_args = list(
+    #         heterogeneity = "additive",
+    #         tau2 = REML$tau2,
+    #         distr = "chisq",
+    #         check_inputs = FALSE
+    #     )
+    # )
+    #
+    # ## HMeanNone_phi (multiplicative with estimated phi)
+    # phi <- hMean::estimatePhi(thetahat = x[, "theta"], se = x[, "se"])
+    # HM_mult_f <- hMean::hMeanChiSqCI(
+    #     thetahat = x[, "theta"],
+    #     se = x[, "se"],
+    #     alternative = "none",
+    #     pValueFUN_args = list(
+    #         heterogeneity = "multiplicative",
+    #         phi = phi,
+    #         distr = "f",
+    #         check_inputs = FALSE
+    #     )
+    # )
+    # HM_mult_chisq <- hMean::hMeanChiSqCI(
+    #     thetahat = x[, "theta"],
+    #     se = x[, "se"],
+    #     alternative = "none",
+    #     pValueFUN_args = list(
+    #         heterogeneity = "multiplicative",
+    #         phi = phi,
+    #         distr = "chisq",
+    #         check_inputs = FALSE
+    #     )
+    # )
+    #
+    # ## HMean_None with k-trials (multiplicative with estimated phi)
+    # KT_none <- hMean::hMeanChiSqCI(
+    #     thetahat = x[, "theta"],
+    #     se = x[, "se"],
+    #     alternative = "none",
+    #     pValueFUN = hMean::kTRMu,
+    #     pValueFUN_args = list(
+    #         check_inputs = FALSE
+    #     )
+    # )
+    #
+    # KT_mult <- hMean::hMeanChiSqCI(
+    #     thetahat = x[, "theta"],
+    #     se = x[, "se"],
+    #     alternative = "none",
+    #     pValueFUN = hMean::kTRMu,
+    #     pValueFUN_args = list(
+    #         heterogeneity = "multiplicative",
+    #         phi = phi,
+    #         check_inputs = FALSE
+    #     )
+    # )
+    #
+    # KT_add <- hMean::hMeanChiSqCI(
+    #     thetahat = x[, "theta"],
+    #     se = x[, "se"],
+    #     alternative = "none",
+    #     pValueFUN = hMean::kTRMu,
+    #     pValueFUN_args = list(
+    #         heterogeneity = "additive",
+    #         tau2 = REML$tau2,
+    #         check_inputs = FALSE
+    #     )
+    # )
+    #
+    # ## Pearson
+    # Pearson_none <- hMean::hMeanChiSqCI(
+    #     thetahat = x[, "theta"],
+    #     se = x[, "se"],
+    #     alternative = "none",
+    #     pValueFUN = hMean::pPearsonMu,
+    #     pValueFUN_args = list(
+    #         heterogeneity = "none",
+    #         check_inputs = FALSE
+    #     )
+    # )
+    # HM_pearson_mult <- hMean::hMeanChiSqCI(
+    #     thetahat = x[, "theta"],
+    #     se = x[, "se"],
+    #     alternative = "none",
+    #     pValueFUN = hMean::pPearsonMu,
+    #     pValueFUN_args = list(
+    #         heterogeneity = "multiplicative",
+    #         phi = phi,
+    #         check_inputs = FALSE
+    #     )
+    # )
+    # HM_pearson_add <- hMean::hMeanChiSqCI(
+    #     thetahat = x[, "theta"],
+    #     se = x[, "se"],
+    #     alternative = "none",
+    #     pValueFUN = hMean::pPearsonMu,
+    #     pValueFUN_args = list(
+    #         heterogeneity = "additive",
+    #         tau2 = REML$tau2,
+    #         check_inputs = FALSE
+    #     )
+    # )
+    #
+    # ## Edgington
+    # HM_edgington_none <- hMean::hMeanChiSqCI(
+    #     thetahat = x[, "theta"],
+    #     se = x[, "se"],
+    #     alternative = "none",
+    #     pValueFUN = hMean::pEdgingtonMu,
+    #     pValueFUN_args = list(
+    #         heterogeneity = "none",
+    #         check_inputs = FALSE
+    #     )
+    # )
+    # HM_edgington_mult <- hMean::hMeanChiSqCI(
+    #     thetahat = x[, "theta"],
+    #     se = x[, "se"],
+    #     alternative = "none",
+    #     pValueFUN = hMean::pEdgingtonMu,
+    #     pValueFUN_args = list(
+    #         heterogeneity = "multiplicative",
+    #         phi = phi,
+    #         check_inputs = FALSE
+    #     )
+    # )
+    # HM_edgington_add <- hMean::hMeanChiSqCI(
+    #     thetahat = x[, "theta"],
+    #     se = x[, "se"],
+    #     alternative = "none",
+    #     pValueFUN = hMean::pEdgingtonMu,
+    #     pValueFUN_args = list(
+    #         heterogeneity = "additive",
+    #         tau2 = REML$tau2,
+    #         check_inputs = FALSE
+    #     )
+    # )
+    #
+    # ## Fisher
+    # HM_fisher_none <- hMean::hMeanChiSqCI(
+    #     thetahat = x[, "theta"],
+    #     se = x[, "se"],
+    #     alternative = "none",
+    #     pValueFUN = hMean::pFisherMu,
+    #     pValueFUN_args = list(
+    #         heterogeneity = "none",
+    #         check_inputs = FALSE
+    #     )
+    # )
+    # HM_fisher_mult <- hMean::hMeanChiSqCI(
+    #     thetahat = x[, "theta"],
+    #     se = x[, "se"],
+    #     alternative = "none",
+    #     pValueFUN = hMean::pFisherMu,
+    #     pValueFUN_args = list(
+    #         heterogeneity = "multiplicative",
+    #         phi = phi,
+    #         check_inputs = FALSE
+    #     )
+    # )
+    # HM_fisher_add <- hMean::hMeanChiSqCI(
+    #     thetahat = x[, "theta"],
+    #     se = x[, "se"],
+    #     alternative = "none",
+    #     pValueFUN = hMean::pFisherMu,
+    #     pValueFUN_args = list(
+    #         heterogeneity = "additive",
+    #         tau2 = REML$tau2,
+    #         check_inputs = FALSE
+    #     )
+    # )
+
+    
 
     tib <- tibble(
         lower = c(
@@ -486,7 +625,13 @@ sim2CIs <- function(x) {
             HM_ktrial_mult$CI[, "lower"],
             HM_pearson_none$CI[, "lower"],
             HM_pearson_add$CI[, "lower"],
-            HM_pearson_mult$CI[, "lower"]
+            HM_pearson_mult$CI[, "lower"],
+            HM_edgington_none$CI[, "lower"],
+            HM_edgington_add$CI[, "lower"],
+            HM_edgington_mult$CI[, "lower"],
+            HM_fisher_none$CI[, "lower"],
+            HM_fisher_add$CI[, "lower"],
+            HM_fisher_mult$CI[, "lower"]
         ),
         upper = c(
             HC$ci.ub,
@@ -505,7 +650,13 @@ sim2CIs <- function(x) {
             HM_ktrial_mult$CI[, "upper"],
             HM_pearson_none$CI[, "upper"],
             HM_pearson_add$CI[, "upper"],
-            HM_pearson_mult$CI[, "upper"]
+            HM_pearson_mult$CI[, "upper"],
+            HM_edgington_none$CI[, "upper"],
+            HM_edgington_add$CI[, "upper"],
+            HM_edgington_mult$CI[, "upper"],
+            HM_fisher_none$CI[, "upper"],
+            HM_fisher_add$CI[, "upper"],
+            HM_fisher_mult$CI[, "upper"]
         ),
         method = c(
             "Henmy & Copas CI",
@@ -527,7 +678,13 @@ sim2CIs <- function(x) {
             rep("k-Trials Multiplicative CI", nrow(HM_ktrial_mult$CI)),
             rep("Pearson CI", nrow(HM_pearson_none$CI)),
             rep("Pearson Additive CI", nrow(HM_pearson_add$CI)),
-            rep("Pearson Multiplicative CI", nrow(HM_pearson_mult$CI))
+            rep("Pearson Multiplicative CI", nrow(HM_pearson_mult$CI)),
+            rep("Edgington CI", nrow(HM_edgington_none$CI)),
+            rep("Edgington Additive CI", nrow(HM_edgington_add$CI)),
+            rep("Edgington Multiplicative CI", nrow(HM_edgington_mult$CI)),
+            rep("Fisher CI", nrow(HM_fisher_none$CI)),
+            rep("Fisher Additive CI", nrow(HM_fisher_add$CI)),
+            rep("Fisher Multiplicative CI", nrow(HM_fisher_mult$CI))
         )
     )
     out <- list(
@@ -543,16 +700,31 @@ sim2CIs <- function(x) {
                 "k-Trials CI", "k-Trials Additive CI",
                 "k-Trials Multiplicative CI",
                 "Pearson CI", "Pearson Additive CI",
-                "Pearson Multiplicative CI"
+                "Pearson Multiplicative CI",
+                "Edgington CI", "Edgington Additive CI",
+                "Edgington Multiplicative CI",
+                "Fisher CI", "Fisher Additive CI",
+                "Fisher Multiplicative CI"
             ),
             gamma_min = c(
-                min(HM_chisq$gamma[, 2]), min(HM_f$gamma[, 2]),
-                min(HM_tau2_chisq$gamma[, 2]), min(HM_tau2_f$gamma[, 2]),
-                min(HM_phi_chisq$gamma[, 2]), min(HM_phi_f$gamma[, 2]),
-                min(HM_ktrial_none$gamma[, 2]), min(HM_ktrial_add$gamma[, 2]),
+                min(HM_chisq$gamma[, 2]),
+                min(HM_f$gamma[, 2]),
+                min(HM_tau2_chisq$gamma[, 2]),
+                min(HM_tau2_f$gamma[, 2]),
+                min(HM_phi_chisq$gamma[, 2]),
+                min(HM_phi_f$gamma[, 2]),
+                min(HM_ktrial_none$gamma[, 2]),
+                min(HM_ktrial_add$gamma[, 2]),
                 min(HM_ktrial_mult$gamma[, 2]),
-                min(HM_pearson_none$gamma[, 2]), min(HM_pearson_add$gamma[, 2]),
-                min(HM_pearson_mult$gamma[, 2])
+                min(HM_pearson_none$gamma[, 2]),
+                min(HM_pearson_add$gamma[, 2]),
+                min(HM_pearson_mult$gamma[, 2]),
+                min(HM_edgington_none$gamma[, 2]),
+                min(HM_edgington_add$gamma[, 2]),
+                min(HM_edgington_mult$gamma[, 2]),
+                min(HM_fisher_none$gamma[, 2]),
+                min(HM_fisher_add$gamma[, 2]),
+                min(HM_fisher_mult$gamma[, 2])
             ),
             x_gamma_min = c(
                 HM_chisq$gamma[which.min(HM_chisq$gamma[, 2]), 1],
@@ -566,7 +738,13 @@ sim2CIs <- function(x) {
                 HM_ktrial_mult$gamma[which.min(HM_ktrial_mult$gamma[, 2]), 1],
                 HM_pearson_none$gamma[which.min(HM_pearson_none$gamma[, 2]), 1],
                 HM_pearson_add$gamma[which.min(HM_pearson_add$gamma[, 2]), 1],
-                HM_pearson_mult$gamma[which.min(HM_pearson_mult$gamma[, 2]), 1]
+                HM_pearson_mult$gamma[which.min(HM_pearson_mult$gamma[, 2]), 1],
+                HM_edgington_none$gamma[which.min(HM_edgington_none$gamma[, 2]), 1],
+                HM_edgington_add$gamma[which.min(HM_edgington_add$gamma[, 2]), 1],
+                HM_edgington_mult$gamma[which.min(HM_edgington_mult$gamma[, 2]), 1],
+                HM_fisher_none$gamma[which.min(HM_fisher_none$gamma[, 2]), 1],
+                HM_fisher_add$gamma[which.min(HM_fisher_add$gamma[, 2]), 1],
+                HM_fisher_mult$gamma[which.min(HM_fisher_mult$gamma[, 2]), 1]
             )
         ),
         theta = x[, "theta"],
@@ -616,10 +794,10 @@ CI2measures <- function(x, pars) {
         # calculate how many times at least one study-specific effect is covered
         found <- FALSE
         for (z in x$delta) {
-          if (any(x_sub[, "lower"] <= z & z <= x_sub[, "upper"])) {
-            found <- TRUE
-            break
-          }
+            if (any(x_sub[, "lower"] <= z & z <= x_sub[, "upper"])) {
+                found <- TRUE
+                break
+            }
         }
         coverage_effects_min1 <- as.numeric(found)
 
@@ -629,8 +807,10 @@ CI2measures <- function(x, pars) {
                 vapply(
                     x$delta,
                     function(delta) {
-                        any(x_sub[, "lower"] <= delta &
-                            delta <= x_sub[, "upper"])
+                        any(
+                            x_sub[, "lower"] <= delta &
+                            delta <= x_sub[, "upper"]
+                        )
                     },
                     logical(1L)
                 )
@@ -639,17 +819,24 @@ CI2measures <- function(x, pars) {
 
         # calculate whether interval covers future study
         # (only for hMean, hMean_additive, hMean_multiplicative)
-        new_study <- simREbias(k = 1, sampleSize = pars$sampleSize,
+        new_study <- simREbias(
+            k = 1, sampleSize = pars$sampleSize,
             effect = pars$effect, I2 = pars$I2,
             heterogeneity = pars$heterogeneity, dist = pars$dist, large = 0,
-            bias = "none")[, "delta"]
+            bias = "none"
+        )[, "delta"]
 
         coverage_prediction <- as.numeric(any(
             x_sub[, "lower"] <= new_study & new_study <= x_sub[, "upper"]
         ))
 
         # get gamma_min to later attach it to the function output
-        if (grepl("Harmonic Mean.*CI|k-Trials.*CI|Pearson.*CI", methods[i])) {
+        if (
+            grepl(
+                "Harmonic Mean.*CI|k-Trials.*CI|Pearson.*CI|Edgington.*CI|Fisher.*CI",
+                methods[i]
+            )
+        ) {
             gamma_min <- x$gamma %>%
                 filter(method == methods[i]) %>%
                 pull(gamma_min)
@@ -675,7 +862,12 @@ CI2measures <- function(x, pars) {
         }
 
         # count number of intervals
-        if (grepl("Harmonic Mean.*CI|k-Trials.*CI|Pearson.*CI", methods[i])) {
+        if (
+            grepl(
+                "Harmonic Mean.*CI|k-Trials.*CI|Pearson.*CI|Edgington.*CI|Fisher.*CI",
+                methods[i]
+            )
+        ) {
             n <- nrow(x_sub)
         } else {
             n <- NA_real_
@@ -873,7 +1065,12 @@ sim <- function(
 
                         ## summary statistics for gamma_min
                         av %>%
-                            filter(grepl("Harmonic Mean.*CI|k-Trials.*CI|Pearson.*CI", method)) %>%
+                            filter(
+                                grepl(
+                                    "Harmonic Mean.*CI|k-Trials.*CI|Pearson.*CI|Edgington.*CI|Fisher.*CI",
+                                    method
+                                )
+                            ) %>%
                             group_by(method) %>%
                             summarize(
                                 across(
@@ -899,7 +1096,12 @@ sim <- function(
 
                         ## relative frequency for n
                         av %>%
-                            filter(grepl("Harmonic Mean.*CI|k-Trials.*CI|Pearson.*CI", method)) %>%
+                            filter(
+                                grepl(
+                                    "Harmonic Mean.*CI|k-Trials.*CI|Pearson.*CI|Edgington.*CI|Fisher.*CI",
+                                    method
+                                )
+                            ) %>%
                             group_by(method) %>%
                             summarize(
                                 across(
@@ -975,8 +1177,8 @@ grid <- expand.grid(
 
 ## run simulation, e.g., on the Rambo server of I-MATH
 tic()
-out <- sim(grid = grid, N = 5e3, cores = 110)
-# out <- sim(grid = grid[688:703, ], N = 30, cores = 15)
+# out <- sim(grid = grid, N = 5e3, cores = 110)
+out <- sim(grid = grid[688:703, ], N = 30, cores = 15)
 toc()
 
 ## save results
