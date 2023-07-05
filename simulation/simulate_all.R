@@ -25,7 +25,6 @@
 ##
 ## Florian Gerber, florian.gerber@uzh.ch, Oct. 14, 2021
 rm(list = ls())
-library(meta)
 remotes::install_github("felix-hof/hMean", ref = "dev")
 library(hMean)
 library(tidyverse)
@@ -35,8 +34,235 @@ library(doRNG)
 library(RhpcBLASctl)
 blas_set_num_threads(1) # multi threading of BLAS
 library(tictoc)
-library(metafor)
-library(sn)
+
+################################################################################
+#                              Helper functions                                #
+################################################################################
+
+
+# Helper function to convert the id_strings into proper names
+# This function is used in:
+# - sim2CI
+make_name <- function(id_strings) {
+    str <- strsplit(id_strings, split = "_")
+    nms <- vapply(
+        str,
+        function(x) {
+            method <- switch(
+                x[1L],
+                "hMean" = "Harmonic Mean",
+                "ktrials" = "k-Trials",
+                "pearson" = "Pearson",
+                "edgington" = "Edgington",
+                "fisher" = "Fisher"
+            )
+            het <- switch(
+                x[length(x)],
+                "none" = "",
+                "additive" = "Additive",
+                "multiplicative" = "Multiplicative"
+            )
+            distr <- if (length(x) == 3L) {
+                switch(
+                    x[2L],
+                    "f" = "(f)",
+                    "chisq" = "(chisq)"
+                )
+            } else {
+                NA_character_
+            }
+            out <- paste(
+                method, het, "CI"
+            )
+            if (!is.na(distr)) out <- paste(out, distr)
+            out
+        },
+        character(1L)
+    )
+    gsub("\\s+", " ", nms)
+}
+
+## This function is only used in tryCatch() blocks in case of an error.
+## The function writes the name of the function that errored, the error
+## message, and the parameters to a file on disk. It also saves an object
+## to disk containing the function inputs.
+## This function is used in:
+## - sim_effects
+error_function <- function(cond, pars, error_obj = NULL, fun_name, i) {
+    text <- capture.output(cond)
+    out_msg <- paste0(
+        "Error in ", fun_name, "iteration: ", i, "\n\n",
+        "Parameters are:\n\n",
+        paste0(paste0(names(pars), ": ", pars[1, ]), collapse = "\n"),
+        "\n\nThe error message is:\n", text, "\n\n",
+        ifelse(
+            is.null(error_obj),
+            "\nSee pars.rds for the saved parameters.\n\n",
+            "\nSee error.rds for the last available object and pars.rds for the saved parameters.\n\n"
+        ),
+        "--------------------------------------------------------------------------------------\n"
+    )
+    cat(out_msg, file = "error.txt", append = TRUE)
+    saveRDS(pars, file = "pars.rds")
+    if (!is.null(error_obj)) saveRDS(error_obj, file = "error.rds")
+    return(NA)
+}
+
+## These functions just call hMeanChiSqMu under the hood but fix the argument
+## `distr` to be either `"f"` or `"chisq"`. This is useful because we do not
+## actually need to worry about including `distr = "f"` in the `args` argument
+## when constructing expressions of the form `do.call("hMeanChiSqMu", args)`.
+hMeanChiSqMu_f <- function(...) {
+    hMean::hMeanChiSqMu(distr = "f", ...)
+}
+
+hMeanChiSqMu_chisq <- function(...) {
+    hMeanChiSqMu(distr = "chisq", ...)
+}
+
+
+## The following functions are used to fit a model to some individual studies
+## and then extract the estimate and CIs. The idea is to make a function of the
+## method, the individual studies, and their SEs. Then we can simply use this
+## and pass only what we really need. Most of these function function are only
+## used within the main function called get_classic_intervals().
+## This main function is used in:
+## - sim2CI
+
+## Fit model with Henmi & Copas
+get_classic_obj_hc <- function(thetahat, se, control) {
+    metafor::hc(
+        object = metafor::rma(yi = thetahat, sei = se, control = control)
+    )
+}
+## Fit model with REML
+get_classic_obj_reml <- function(thetahat, se, control) {
+    meta::metagen(
+        TE = thetahat,
+        seTE = se,
+        sm = "MD",
+        method.tau = "REML",
+        control = control
+    )
+}
+## Fit model with Hartung-Knapp
+get_classic_obj_hk <- function(thetahat, se, control) {
+    meta::metagen(
+        TE = thetahat,
+        seTE = se,
+        sm = "MD",
+        method.tau = "REML",
+        hakn = TRUE,
+        control = control
+    )
+}
+## wrapper function
+get_classic_obj <- function(method, thetahat, se, control) {
+    switch(
+        method,
+        "hk" = get_classic_obj_hk(
+            thetahat = thetahat,
+            se = se,
+            control = control
+        ),
+        "hc" = get_classic_obj_hc(
+            thetahat = thetahat,
+            se = se,
+            control = control
+        ),
+        "reml" = get_classic_obj_reml(
+            thetahat = thetahat,
+            se = se,
+            control = control
+        )
+    )
+}
+## extract lower and upper bound for Hartung-Knapp and REML CI
+get_classic_ci_reml <- get_classic_ci_hk <- function(obj) {
+    with(obj, c(lower.random, upper.random))
+}
+## extract lower and upper bound for Hartung-Knapp and REML PI
+get_classic_pi_reml <- get_classic_pi_hk <- function(obj) {
+    with(obj, c(lower.predict, upper.predict))
+}
+## extract lower and upper bound for Henmi & Copas CI
+get_classic_ci_hc <- function(obj) {
+    with(obj, c(ci.lb, ci.ub))
+}
+## which function to call depending on the method
+get_classic_interval <- function(method, obj) {
+    switch(
+        method,
+        "hk_pi" = get_classic_pi_hk(obj = obj),
+        "reml_pi" = get_classic_pi_reml(obj = obj),
+        "hk_ci" = get_classic_ci_hk(obj = obj),
+        "reml_ci" = get_classic_ci_reml(obj = obj),
+        "hc_ci" = get_classic_ci_hc(obj = obj)
+    )
+}
+
+## The vectorised version of the above function with
+get_classic_intervals <- function(methods, thetahat, se) {
+    # set control options
+    control <- list(maxiter = 1e4, stepadj = 0.25)
+    # hash tables for methods2obj and methods2int
+    # as some methods use the same objects
+    meth2obj_code <- c(
+        "hc_ci" = "hc",
+        "reml_ci" = "reml",
+        "reml_pi" = "reml",
+        "hk_ci" = "hk",
+        "hk_pi" = "hk"
+    )
+    meth2name <- c(
+        "hc_ci" = "Henmi & Copas CI",
+        "reml_ci" = "REML CI",
+        "reml_pi" = "REML PI",
+        "hk_ci" = "Hartung & Knapp CI",
+        "hk_pi" = "Hartung & Knapp PI"
+    )
+    # which objects to fit
+    obj_codes <- meth2obj_code[methods]
+    obj_fit <- unique(obj_codes)
+    # fit objects
+    objs <- lapply(
+        obj_fit,
+        get_classic_obj,
+        thetahat = thetahat,
+        se = se,
+        control = control
+    )
+    names(objs) <- obj_fit
+    # get the CIs
+    ci <- matrix(0, nrow = length(methods), ncol = 2L)
+    for (i in seq_along(methods)) {
+        ci[i, ] <- get_classic_interval(
+            method = methods[i],
+            obj = objs[[obj_codes[i]]]
+        )
+    }
+    # convert this to df
+    # which methods to call
+    names <- meth2name[methods]
+    out <- data.frame(
+        lower = ci[, 1L],
+        upper = ci[, 2L],
+        method = names,
+        stringsAsFactors = FALSE,
+        row.names = NULL
+    )
+    # attach attribute tau2
+    if ("reml" %in% obj_codes) {
+        attr(out, which = "tau2") <- objs$reml$tau2
+    }
+    # return
+    out
+}
+
+
+################################################################################
+#                    Simulating effects and standard errors                    #
+################################################################################
 
 #' Simulate effect estimates and their standard errors using a random effects
 #' model
@@ -55,13 +281,15 @@ library(sn)
 #' @return a matrix \code{k} x 2 matrix with columns
 #' \code{theta} (effect estimates) and
 #' \code{se} (standard errors).
-simRE <- function(k,
-                  sampleSize,
-                  effect,
-                  I2,
-                  heterogeneity,
-                  dist,
-                  large) {
+simRE <- function(
+    k,
+    sampleSize,
+    effect,
+    I2,
+    heterogeneity,
+    dist,
+    large
+) {
 
     # get args
     n <- rep(sampleSize, k)
@@ -99,7 +327,7 @@ simRE <- function(k,
             ## large as the heterogeneity variance under normality.
             ## sample sequentially with marginal variance equal to
             ## (phi-1)*2/n + 2/n = phi*2/n
-            delta <- rst(n = k, xi = effect, omega = sqrt(tau2 / 2), nu = 4)
+            delta <- sn::rst(n = k, xi = effect, omega = sqrt(tau2 / 2), nu = 4)
         } else {  ## Gaussian, sample directly from marginal
             delta <- rnorm(n = k, mean = effect, sd = sqrt(tau2))
         }
@@ -176,44 +404,47 @@ pAccept <- function(theta, se, bias) {
 #'           bias = "moderate")
 #' simREbias(4, sampleSize= 50, effect=.2, I2=.3, dist="Gaussian",
 #'           large=1, bias = "strong")
-simREbias <- function(k,
-                      sampleSize,
-                      effect,
-                      I2,
-                      heterogeneity = c("additive", "multiplicative"),
-                      dist = c("t", "Gaussian"),
-                      large,
-                      bias = c("none", "moderate", "strong"),
-                      verbose = TRUE,
-                      check_inputs = TRUE) {
+simREbias <- function(
+    k,
+    sampleSize,
+    effect,
+    I2,
+    heterogeneity = c("additive", "multiplicative"),
+    dist = c("t", "Gaussian"),
+    large,
+    bias = c("none", "moderate", "strong"),
+    verbose = TRUE,
+    check_inputs = TRUE
+) {
     # input checks
     if (check_inputs) {
-        stopifnot(length(k) == 1L,
-             is.numeric(k),
-             is.numeric(sampleSize),
-             is.finite(sampleSize),
-             length(sampleSize) == 1L,
-             is.numeric(effect),
-             length(effect) == 1L,
-             is.numeric(effect),
-             is.finite(effect),
-             length(I2) == 1,
-             is.numeric(I2),
-             0 <= I2, I2 < 1,
-             is.character(heterogeneity),
-             length(heterogeneity) == 1L,
-             !is.na(heterogeneity),
-             is.character(dist),
-             length(dist) == 1L,
-             !is.na(dist),
-             is.numeric(large),
-             length(large) == 1L,
-             is.finite(large),
-             large %in% c(0, 1, 2),
-             is.character(bias),
-             length(bias) == 1L,
-             !is.na(bias),
-             k >= large
+        stopifnot(
+            length(k) == 1L,
+            is.numeric(k),
+            is.numeric(sampleSize),
+            is.finite(sampleSize),
+            length(sampleSize) == 1L,
+            is.numeric(effect),
+            length(effect) == 1L,
+            is.numeric(effect),
+            is.finite(effect),
+            length(I2) == 1,
+            is.numeric(I2),
+            0 <= I2, I2 < 1,
+            is.character(heterogeneity),
+            length(heterogeneity) == 1L,
+            !is.na(heterogeneity),
+            is.character(dist),
+            length(dist) == 1L,
+            !is.na(dist),
+            is.numeric(large),
+            length(large) == 1L,
+            is.finite(large),
+            large %in% c(0, 1, 2),
+            is.character(bias),
+            length(bias) == 1L,
+            !is.na(bias),
+            k >= large
         )
     }
 
@@ -222,7 +453,8 @@ simREbias <- function(k,
     heterogeneity <- match.arg(heterogeneity)
 
     if (bias == "none") {
-        o <- simRE(k = k, sampleSize = sampleSize, effect = effect, I2 = I2,
+        o <- simRE(
+            k = k, sampleSize = sampleSize, effect = effect, I2 = I2,
             heterogeneity = heterogeneity, dist = dist, large = large
         )
         ## add attributes and return
@@ -232,14 +464,16 @@ simREbias <- function(k,
     }
 
     ## first ignore the 'large'
-    o <- simRE(k = k * 3, sampleSize = sampleSize, effect = effect, I2 = I2,
+    o <- simRE(
+        k = k * 3, sampleSize = sampleSize, effect = effect, I2 = I2,
         heterogeneity = heterogeneity, dist = dist, large = 0
     )
     pa <- pAccept(theta = o[, "theta"], se = o[, "se"], bias = bias)
     keep <- rbinom(n = k * 3, size = 1, prob = pa)
     while (k > sum(keep)) {
         if (verbose) cat(".")
-        o2 <- simRE(k = k * 3, sampleSize = sampleSize, effect = effect,
+        o2 <- simRE(
+            k = k * 3, sampleSize = sampleSize, effect = effect,
             I2 = I2, heterogeneity = heterogeneity, dist = dist,  large = 0
         )
         pa2 <- pAccept(theta = o2[, "theta"], se = o2[, "se"], bias = bias)
@@ -251,7 +485,8 @@ simREbias <- function(k,
 
     ## add large studies
     if (large != 0) {
-        oLarge <- simRE(k = large, sampleSize = sampleSize, effect = effect,
+        oLarge <- simRE(
+            k = large, sampleSize = sampleSize, effect = effect,
             I2 = I2, heterogeneity = heterogeneity, dist = dist, large = large
         )
         o <- rbind(oLarge, o[-seq_len(large), ])
@@ -263,6 +498,45 @@ simREbias <- function(k,
     o
 }
 
+## Wrapper function around simREbias() that, in case of errors, runs
+## the error_function such that the simulation stops immediately
+## instead of continuing to calculate all the other scenarios
+sim_effects <- function(pars, i) {
+    # run simREbias on the elements of a list/dataframe and return
+    # if there is an error, call error_function
+    tryCatch(
+        {
+            with(
+                pars,
+                simREbias(
+                    k = k,
+                    sampleSize = sampleSize,
+                    effect = effect,
+                    I2 = I2,
+                    heterogeneity = heterogeneity,
+                    dist = dist,
+                    large = large,
+                    bias = bias,
+                    verbose = TRUE,
+                    check_inputs = FALSE
+                )
+            )
+        },
+        error = function(cond) {
+            error_function(
+                cond = cond,
+                pars = pars,
+                fun_name = "simREbias",
+                i = i
+            )
+        }
+    )
+}
+
+################################################################################
+#                            Calculating the CIs                               #
+################################################################################
+
 
 #' Confidence intervals from effect estimates and their standard errors
 #'
@@ -273,46 +547,33 @@ simREbias <- function(k,
 #' @return a tibble with columns \code{lower}, \code{upper}, and \code{method}.
 sim2CIs <- function(x) {
 
-    ## Set control parameters for metafor and meta functions
-    # control <- switch(
-    #     as.character(nrow(x)),
-    #     "50" = list(maxiter = 1e4, stepadj = 0.25),
-    #     "20" = list(maxiter = 1e4, stepadj = 0.5),
-    #     "10" = list(maxiter = 1e4, stepadj = 0.5),
-    #     list(maxiter = 1e4, stepadj = 1)
-    # )
-    control <- list(maxiter = 1e4, stepadj = 0.25)
+    thetahat <- x[, 1L]
+    se <- x[, 2L]
 
-    ## Henmi & Copas confidence Interval
-    HC <- metafor::hc(
-        object = metafor::rma(yi = x[, "theta"], sei = x[, "se"],
-        control = control)
+    classic_methods <- get_classic_intervals(
+        methods = c("hk_ci", "hk_pi", "reml_ci", "reml_pi", "hc_ci"),
+        thetahat = thetahat,
+        se = se
     )
 
-    ## standard metagen with REML estimation of tau
-    REML <- meta::metagen(
-        TE = x[, "theta"],
-        seTE = x[, "se"],
-        sm = "MD",
-        method.tau = "REML",
-        control = control
+    phi <- hMean::estimatePhi(thetahat = x[])
+    tau2 <- attributes(classic_methods)$tau2
+    if (is.null(tau2)) tau2 <- hMean::estimateTau2()
+
+    new_methods <- get_new_intervals(
+        methods = c(),
+        thetahat = c(),
+        se = c()
     )
 
-    ## Hartung - Knapp
-    HK <- meta::metagen(
-        TE = x[, "theta"],
-        seTE = x[, "se"],
-        sm = "MD",
-        method.tau = "REML",
-        hakn = TRUE,
-        control = control
-    )
 
     ## p-value functions to try
+    ## Note: For names of this list, use underscores only to
+    ##       separate distr argument. Do not use it for method names
     f <- list(
-        hMean_f = hMean::hMeanChiSqMu,
-        hMean_chisq = hMean::hMeanChiSqMu,
-        k_Trials = hMean::kTRMu,
+        hMean_f = hMeanChiSqMu_f,
+        hMean_chisq = hMeanChiSqMu_chisq,
+        ktrials = hMean::kTRMu,
         pearson = hMean::pPearsonMu,
         edgington = hMean::pEdgingtonMu,
         fisher = hMean::pFisherMu
@@ -334,427 +595,95 @@ sim2CIs <- function(x) {
             check_inputs = FALSE
         )
     )
-
-    out <- vector("list", length(f))
-    names(out) <- names(f)
+    ## calculate the CIs
+    out <- vector("list", length(f) * length(arguments))
+    counter <- 1L
     for (k in seq_along(f)) {
-        out[[k]] <- vector("list", length(arguments))
-        names(out[[k]]) <- names(arguments)
         for (l in seq_along(arguments)) {
-            current_function <- names(f)[k]
-            current_het <- names(arguments)[l]
-            pValueFUN_args <- if (current_function == "hMean_f") {
-                append(arguments[[l]], list(distr = "f"))
-            } else if (current_function == "hMean_chisq") {
-                append(arguments[[l]], list(distr = "chisq"))
-            } else {
-                arguments[[l]]
-            }
-            out[[k]][[l]] <- hMean::hMeanChiSqCI(
+            # get the current p-value function
+            fun <- names(f)[k]
+            het <- names(arguments)[l]
+            names(out)[counter] <- paste0(fun, "_", het)
+            # compute CI
+            out[[counter]] <- hMean::hMeanChiSqCI(
                 thetahat = x[, "theta"],
                 se = x[, "se"],
                 alternative = "none",
                 pValueFUN = f[[k]],
-                pValueFUN_args = pValueFUN_args
+                pValueFUN_args = arguments[[l]]
             )
-
+            counter <- counter + 1L
         }
     }
 
-
-    out <- lapply(
-        seq_along(f),
-        function(i, arguments) {
-            fun_name <- names(f)[i]
-            cat(fun_name, "\n")
-            FUN <- f[[i]]
-            lapply(
-                arguments,
-                function(args, FUN, x) {
-                    pValueFUN_args <- if (fun_name == "hMean_f") {
-                        append(args, list(distr = "f"))
-                    } else if (fun_name == "hMean_chisq") {
-                        append(args, list(distr = "chisq"))
-                    } else {
-                        args
-                    }
-                    cat("Calling function: ", fun_name, "\n")
-                    cat("Args are:\n")
-                    print(pValueFUN_args)
-                    hMean::hMeanChiSqCI(
-                        thetahat = x[, "theta"],
-                        se = x[, "se"],
-                        alternative = "none",
-                        pValueFUN = FUN,
-                        pValueFUN_args = pValueFUN_args
-                    )
-                },
-                FUN = FUN,
-                x = x
+    # For each method, add a name, and put everything into a data
+    # frame
+    new_methods <- lapply(
+        seq_along(out),
+        function(i) {
+            y <- out[[i]]
+            method_name <- make_name(names(out)[i])
+            # Output CIs
+            CI <- tibble::as_tibble(y$CI)
+            CI$method <- method_name
+            # Output Gamma
+            gam <- y$gamma
+            ci_exists <- !all(is.na(gam))
+            if (!ci_exists) {
+                gamma_min <- NA_real_
+                x_gamma_min <- NA_real_
+            } else {
+                idx_min <- which.min(gam[, 2L])
+                gamma_min <- gam[, 2L][idx_min]
+                x_gamma_min  <- gam[, 1L][idx_min]
+            }
+            gamma <- tibble::tibble(
+                method = method_name,
+                gamma_min = gamma_min,
+                x_gamma_min = x_gamma_min
             )
-        },
-        arguments = arguments,
-        x = x
+            list(CI = CI, gamma = gamma)
+        }
     )
+    CI <- do.call("rbind", lapply(new_methods, "[[", i = "CI"))
+    gamma <- do.call("rbind", lapply(new_methods, "[[", i = "gamma"))
 
-    lower <- c()
-
-    # ## HMeanNone
-    # HM_none_f <- hMean::hMeanChiSqCI(
-    #     thetahat = x[, "theta"],
-    #     se = x[, "se"],
-    #     alternative = "none",
-    #     pValueFUN_args = list(
-    #         distr = "f",
-    #         check_inputs = FALSE
-    #     )
-    # )
-    # HM_none_chisq <- hMean::hMeanChiSqCI(
-    #     thetahat = x[, "theta"],
-    #     se = x[, "se"],
-    #     alternative = "none",
-    #     pValueFUN_args = list(
-    #         distr = "chisq",
-    #         check_inputs = FALSE
-    #     )
-    # )
-    #
-    # ## HMeanNone (additive with estimated tau2)
-    # HM_add_f <- hMean::hMeanChiSqCI(
-    #     thetahat = x[, "theta"],
-    #     se = x[, "se"],
-    #     alternative = "none",
-    #     pValueFUN_args = list(
-    #         heterogeneity = "additive",
-    #         tau2 = REML$tau2,
-    #         distr = "f",
-    #         check_inputs = FALSE
-    #     )
-    # )
-    # HM_add_chisq <- hMean::hMeanChiSqCI(
-    #     thetahat = x[, "theta"],
-    #     se = x[, "se"],
-    #     alternative = "none",
-    #     pValueFUN_args = list(
-    #         heterogeneity = "additive",
-    #         tau2 = REML$tau2,
-    #         distr = "chisq",
-    #         check_inputs = FALSE
-    #     )
-    # )
-    #
-    # ## HMeanNone_phi (multiplicative with estimated phi)
-    # phi <- hMean::estimatePhi(thetahat = x[, "theta"], se = x[, "se"])
-    # HM_mult_f <- hMean::hMeanChiSqCI(
-    #     thetahat = x[, "theta"],
-    #     se = x[, "se"],
-    #     alternative = "none",
-    #     pValueFUN_args = list(
-    #         heterogeneity = "multiplicative",
-    #         phi = phi,
-    #         distr = "f",
-    #         check_inputs = FALSE
-    #     )
-    # )
-    # HM_mult_chisq <- hMean::hMeanChiSqCI(
-    #     thetahat = x[, "theta"],
-    #     se = x[, "se"],
-    #     alternative = "none",
-    #     pValueFUN_args = list(
-    #         heterogeneity = "multiplicative",
-    #         phi = phi,
-    #         distr = "chisq",
-    #         check_inputs = FALSE
-    #     )
-    # )
-    #
-    # ## HMean_None with k-trials (multiplicative with estimated phi)
-    # KT_none <- hMean::hMeanChiSqCI(
-    #     thetahat = x[, "theta"],
-    #     se = x[, "se"],
-    #     alternative = "none",
-    #     pValueFUN = hMean::kTRMu,
-    #     pValueFUN_args = list(
-    #         check_inputs = FALSE
-    #     )
-    # )
-    #
-    # KT_mult <- hMean::hMeanChiSqCI(
-    #     thetahat = x[, "theta"],
-    #     se = x[, "se"],
-    #     alternative = "none",
-    #     pValueFUN = hMean::kTRMu,
-    #     pValueFUN_args = list(
-    #         heterogeneity = "multiplicative",
-    #         phi = phi,
-    #         check_inputs = FALSE
-    #     )
-    # )
-    #
-    # KT_add <- hMean::hMeanChiSqCI(
-    #     thetahat = x[, "theta"],
-    #     se = x[, "se"],
-    #     alternative = "none",
-    #     pValueFUN = hMean::kTRMu,
-    #     pValueFUN_args = list(
-    #         heterogeneity = "additive",
-    #         tau2 = REML$tau2,
-    #         check_inputs = FALSE
-    #     )
-    # )
-    #
-    # ## Pearson
-    # Pearson_none <- hMean::hMeanChiSqCI(
-    #     thetahat = x[, "theta"],
-    #     se = x[, "se"],
-    #     alternative = "none",
-    #     pValueFUN = hMean::pPearsonMu,
-    #     pValueFUN_args = list(
-    #         heterogeneity = "none",
-    #         check_inputs = FALSE
-    #     )
-    # )
-    # HM_pearson_mult <- hMean::hMeanChiSqCI(
-    #     thetahat = x[, "theta"],
-    #     se = x[, "se"],
-    #     alternative = "none",
-    #     pValueFUN = hMean::pPearsonMu,
-    #     pValueFUN_args = list(
-    #         heterogeneity = "multiplicative",
-    #         phi = phi,
-    #         check_inputs = FALSE
-    #     )
-    # )
-    # HM_pearson_add <- hMean::hMeanChiSqCI(
-    #     thetahat = x[, "theta"],
-    #     se = x[, "se"],
-    #     alternative = "none",
-    #     pValueFUN = hMean::pPearsonMu,
-    #     pValueFUN_args = list(
-    #         heterogeneity = "additive",
-    #         tau2 = REML$tau2,
-    #         check_inputs = FALSE
-    #     )
-    # )
-    #
-    # ## Edgington
-    # HM_edgington_none <- hMean::hMeanChiSqCI(
-    #     thetahat = x[, "theta"],
-    #     se = x[, "se"],
-    #     alternative = "none",
-    #     pValueFUN = hMean::pEdgingtonMu,
-    #     pValueFUN_args = list(
-    #         heterogeneity = "none",
-    #         check_inputs = FALSE
-    #     )
-    # )
-    # HM_edgington_mult <- hMean::hMeanChiSqCI(
-    #     thetahat = x[, "theta"],
-    #     se = x[, "se"],
-    #     alternative = "none",
-    #     pValueFUN = hMean::pEdgingtonMu,
-    #     pValueFUN_args = list(
-    #         heterogeneity = "multiplicative",
-    #         phi = phi,
-    #         check_inputs = FALSE
-    #     )
-    # )
-    # HM_edgington_add <- hMean::hMeanChiSqCI(
-    #     thetahat = x[, "theta"],
-    #     se = x[, "se"],
-    #     alternative = "none",
-    #     pValueFUN = hMean::pEdgingtonMu,
-    #     pValueFUN_args = list(
-    #         heterogeneity = "additive",
-    #         tau2 = REML$tau2,
-    #         check_inputs = FALSE
-    #     )
-    # )
-    #
-    # ## Fisher
-    # HM_fisher_none <- hMean::hMeanChiSqCI(
-    #     thetahat = x[, "theta"],
-    #     se = x[, "se"],
-    #     alternative = "none",
-    #     pValueFUN = hMean::pFisherMu,
-    #     pValueFUN_args = list(
-    #         heterogeneity = "none",
-    #         check_inputs = FALSE
-    #     )
-    # )
-    # HM_fisher_mult <- hMean::hMeanChiSqCI(
-    #     thetahat = x[, "theta"],
-    #     se = x[, "se"],
-    #     alternative = "none",
-    #     pValueFUN = hMean::pFisherMu,
-    #     pValueFUN_args = list(
-    #         heterogeneity = "multiplicative",
-    #         phi = phi,
-    #         check_inputs = FALSE
-    #     )
-    # )
-    # HM_fisher_add <- hMean::hMeanChiSqCI(
-    #     thetahat = x[, "theta"],
-    #     se = x[, "se"],
-    #     alternative = "none",
-    #     pValueFUN = hMean::pFisherMu,
-    #     pValueFUN_args = list(
-    #         heterogeneity = "additive",
-    #         tau2 = REML$tau2,
-    #         check_inputs = FALSE
-    #     )
-    # )
-
-    
-
-    tib <- tibble(
-        lower = c(
-            HC$ci.lb,
-            REML$lower.random,
-            REML$lower.predict,
-            HK$lower.random,
-            HK$lower.predict,
-            HM_chisq$CI[, "lower"],
-            HM_f$CI[, "lower"],
-            HM_tau2_chisq$CI[, "lower"],
-            HM_tau2_f$CI[, "lower"],
-            HM_phi_chisq$CI[, "lower"],
-            HM_phi_f$CI[, "lower"],
-            HM_ktrial_none$CI[, "lower"],
-            HM_ktrial_add$CI[, "lower"],
-            HM_ktrial_mult$CI[, "lower"],
-            HM_pearson_none$CI[, "lower"],
-            HM_pearson_add$CI[, "lower"],
-            HM_pearson_mult$CI[, "lower"],
-            HM_edgington_none$CI[, "lower"],
-            HM_edgington_add$CI[, "lower"],
-            HM_edgington_mult$CI[, "lower"],
-            HM_fisher_none$CI[, "lower"],
-            HM_fisher_add$CI[, "lower"],
-            HM_fisher_mult$CI[, "lower"]
-        ),
-        upper = c(
-            HC$ci.ub,
-            REML$upper.random,
-            REML$upper.predict,
-            HK$upper.random,
-            HK$upper.predict,
-            HM_chisq$CI[, "upper"],
-            HM_f$CI[, "upper"],
-            HM_tau2_chisq$CI[, "upper"],
-            HM_tau2_f$CI[, "upper"],
-            HM_phi_chisq$CI[, "upper"],
-            HM_phi_f$CI[, "upper"],
-            HM_ktrial_none$CI[, "upper"],
-            HM_ktrial_add$CI[, "upper"],
-            HM_ktrial_mult$CI[, "upper"],
-            HM_pearson_none$CI[, "upper"],
-            HM_pearson_add$CI[, "upper"],
-            HM_pearson_mult$CI[, "upper"],
-            HM_edgington_none$CI[, "upper"],
-            HM_edgington_add$CI[, "upper"],
-            HM_edgington_mult$CI[, "upper"],
-            HM_fisher_none$CI[, "upper"],
-            HM_fisher_add$CI[, "upper"],
-            HM_fisher_mult$CI[, "upper"]
-        ),
-        method = c(
-            "Henmy & Copas CI",
-            "REML CI",
-            "REML PI",
-            "Hartung & Knapp CI",
-            "Hartung & Knapp PI",
-            #"Harmonic Mean two sided CI (chisq)",
-            #"Harmonic Mean two sided CI (f)",
-            rep("Harmonic Mean CI (chisq)", nrow(HM_chisq$CI)),
-            rep("Harmonic Mean CI (f)", nrow(HM_f$CI)),
-            rep("Harmonic Mean Additive CI (chisq)", nrow(HM_tau2_chisq$CI)),
-            rep("Harmonic Mean Additive CI (f)", nrow(HM_tau2_f$CI)),
-            rep("Harmonic Mean Multiplicative CI (chisq)",
-                nrow(HM_phi_chisq$CI)),
-            rep("Harmonic Mean Multiplicative CI (f)", nrow(HM_phi_f$CI)),
-            rep("k-Trials CI", nrow(HM_ktrial_none$CI)),
-            rep("k-Trials Additive CI", nrow(HM_ktrial_add$CI)),
-            rep("k-Trials Multiplicative CI", nrow(HM_ktrial_mult$CI)),
-            rep("Pearson CI", nrow(HM_pearson_none$CI)),
-            rep("Pearson Additive CI", nrow(HM_pearson_add$CI)),
-            rep("Pearson Multiplicative CI", nrow(HM_pearson_mult$CI)),
-            rep("Edgington CI", nrow(HM_edgington_none$CI)),
-            rep("Edgington Additive CI", nrow(HM_edgington_add$CI)),
-            rep("Edgington Multiplicative CI", nrow(HM_edgington_mult$CI)),
-            rep("Fisher CI", nrow(HM_fisher_none$CI)),
-            rep("Fisher Additive CI", nrow(HM_fisher_add$CI)),
-            rep("Fisher Multiplicative CI", nrow(HM_fisher_mult$CI))
-        )
-    )
-    out <- list(
-        CIs = tib,
+    # return
+    list(
+        CIs = rbind(classic_methods, CI),
         model = attributes(x)$heterogeneity,
-        gamma = tibble(
-            method = c(
-                "Harmonic Mean CI (chisq)", "Harmonic Mean CI (f)",
-                "Harmonic Mean Additive CI (chisq)",
-                "Harmonic Mean Additive CI (f)",
-                "Harmonic Mean Multiplicative CI (chisq)",
-                "Harmonic Mean Multiplicative CI (f)",
-                "k-Trials CI", "k-Trials Additive CI",
-                "k-Trials Multiplicative CI",
-                "Pearson CI", "Pearson Additive CI",
-                "Pearson Multiplicative CI",
-                "Edgington CI", "Edgington Additive CI",
-                "Edgington Multiplicative CI",
-                "Fisher CI", "Fisher Additive CI",
-                "Fisher Multiplicative CI"
-            ),
-            gamma_min = c(
-                min(HM_chisq$gamma[, 2]),
-                min(HM_f$gamma[, 2]),
-                min(HM_tau2_chisq$gamma[, 2]),
-                min(HM_tau2_f$gamma[, 2]),
-                min(HM_phi_chisq$gamma[, 2]),
-                min(HM_phi_f$gamma[, 2]),
-                min(HM_ktrial_none$gamma[, 2]),
-                min(HM_ktrial_add$gamma[, 2]),
-                min(HM_ktrial_mult$gamma[, 2]),
-                min(HM_pearson_none$gamma[, 2]),
-                min(HM_pearson_add$gamma[, 2]),
-                min(HM_pearson_mult$gamma[, 2]),
-                min(HM_edgington_none$gamma[, 2]),
-                min(HM_edgington_add$gamma[, 2]),
-                min(HM_edgington_mult$gamma[, 2]),
-                min(HM_fisher_none$gamma[, 2]),
-                min(HM_fisher_add$gamma[, 2]),
-                min(HM_fisher_mult$gamma[, 2])
-            ),
-            x_gamma_min = c(
-                HM_chisq$gamma[which.min(HM_chisq$gamma[, 2]), 1],
-                HM_f$gamma[which.min(HM_f$gamma[, 2]), 1],
-                HM_tau2_chisq$gamma[which.min(HM_tau2_chisq$gamma[, 2]), 1],
-                HM_tau2_f$gamma[which.min(HM_tau2_f$gamma[, 2]), 1],
-                HM_phi_chisq$gamma[which.min(HM_phi_chisq$gamma[, 2]), 1],
-                HM_phi_f$gamma[which.min(HM_phi_f$gamma[, 2]), 1],
-                HM_ktrial_none$gamma[which.min(HM_ktrial_none$gamma[, 2]), 1],
-                HM_ktrial_add$gamma[which.min(HM_ktrial_add$gamma[, 2]), 1],
-                HM_ktrial_mult$gamma[which.min(HM_ktrial_mult$gamma[, 2]), 1],
-                HM_pearson_none$gamma[which.min(HM_pearson_none$gamma[, 2]), 1],
-                HM_pearson_add$gamma[which.min(HM_pearson_add$gamma[, 2]), 1],
-                HM_pearson_mult$gamma[which.min(HM_pearson_mult$gamma[, 2]), 1],
-                HM_edgington_none$gamma[which.min(HM_edgington_none$gamma[, 2]), 1],
-                HM_edgington_add$gamma[which.min(HM_edgington_add$gamma[, 2]), 1],
-                HM_edgington_mult$gamma[which.min(HM_edgington_mult$gamma[, 2]), 1],
-                HM_fisher_none$gamma[which.min(HM_fisher_none$gamma[, 2]), 1],
-                HM_fisher_add$gamma[which.min(HM_fisher_add$gamma[, 2]), 1],
-                HM_fisher_mult$gamma[which.min(HM_fisher_mult$gamma[, 2]), 1]
-            )
-        ),
+        gamma = gamma,
         theta = x[, "theta"],
         delta = x[, "delta"],
         effect = attributes(x)$effect
     )
-    out
+}
+
+calc_ci <- function(x) {
+    if (length(x) == 1L && is.na(x)) {
+        NA
+    } else {
+        sim2CIs(x = x)
+    }
 }
 
 
+# CIs <- tryCatch({
+#     if (length(res) == 1L && is.na(res)) NA else sim2CIs(x = res)
+#     },
+#     error = function(cond) error_function(cond = cond, pars = pars, error_obj = res, fun_name = "sim2CIs")
+# )
+
+## Helper function that returns whether or not a given method is
+## one of the new methods or not
+is_new_method <- function(method) {
+    grepl("(Harmonic Mean|k-Trials|Pearson|Edgington|Fisher)", method)
+}
+## Helper function to determine whether the current method is a CI
+## or a prediction interval
+is_ci_method <- function(method) {
+    grepl("CI", method)
+}
 
 #' Computes quality measures for CIs
 #'
@@ -776,24 +705,50 @@ sim2CIs <- function(x) {
 #' \item{\code{n}}{Number of intervals}
 CI2measures <- function(x, pars) {
 
-    methods <- unique(x$CIs$method)
+    # get the method corresponding to each row of the CIs
+    row_method <- x$CIs$method
+    # list all methods
+    all_methods <- unique(row_method)
+    # convert CIs to matrix
+    cis <- as.matrix(x$CIs[c("lower", "upper")])
+    # get gamma
+    gamma <- as.matrix(x$gamma[c("gamma_min", "x_gamma_min")])
+    gamma_methods <- x$gamma$method
+    # get the deltas
+    delta <- x$delta
+    # get the effect
+    effect <- x$effect
 
-    foreach::foreach(i = seq_along(methods), .combine = rbind) %do% {
+    foreach::foreach(i = seq_along(all_methods), .combine = rbind) %do% {
 
+        # Current method
+        meth <- all_methods[i]
+        # Current CI index
+        meth_idx <- row_method == meth
         # Subset by method
-        x_sub <- x$CIs %>% filter(method == methods[i]) %>%
-            select(lower, upper) %>%
-            as.matrix()
+        x_sub <- cis[meth_idx, , drop = FALSE]
+        # See whether we need to include gamma
+        is_new <- if (is_new_method(meth)) TRUE else FALSE
+        # Subset gamma
+        if (is_new) {
+            gamma_idx <- gamma_methods == meth
+        }
+
 
         # calculate proportion of deltas covered by the interval
-        coverage_effects <- vapply(x$delta, function(delta) {
-            any(x_sub[, "lower"] <= delta & delta <= x_sub[, "upper"])
-        }, logical(1L)) %>%
-            mean()
+        coverage_effects <- mean(
+            vapply(
+                delta,
+                function(delta) {
+                    any(x_sub[, "lower"] <= delta & delta <= x_sub[, "upper"])
+                },
+                logical(1L)
+            )
+        )
 
         # calculate how many times at least one study-specific effect is covered
         found <- FALSE
-        for (z in x$delta) {
+        for (z in delta) {
             if (any(x_sub[, "lower"] <= z & z <= x_sub[, "upper"])) {
                 found <- TRUE
                 break
@@ -805,7 +760,7 @@ CI2measures <- function(x, pars) {
         coverage_effects_all <- as.numeric(
             all(
                 vapply(
-                    x$delta,
+                    delta,
                     function(delta) {
                         any(
                             x_sub[, "lower"] <= delta &
@@ -826,91 +781,62 @@ CI2measures <- function(x, pars) {
             bias = "none"
         )[, "delta"]
 
-        coverage_prediction <- as.numeric(any(
-            x_sub[, "lower"] <= new_study & new_study <= x_sub[, "upper"]
-        ))
+        coverage_prediction <- as.numeric(
+            any(
+                x_sub[, "lower"] <= new_study & new_study <= x_sub[, "upper"]
+            )
+        )
+
+        # calculate total width of the interval(s)
+        width <- sum(x_sub[, "upper"] - x_sub[, "lower"])
+
+        # calculate whether interval covers true effect
+        coverage_true <- as.numeric(
+            any(x_sub[, "lower"] <= effect & effect <= x_sub[, "upper"])
+        )
 
         # get gamma_min to later attach it to the function output
-        if (
-            grepl(
-                "Harmonic Mean.*CI|k-Trials.*CI|Pearson.*CI|Edgington.*CI|Fisher.*CI",
-                methods[i]
-            )
-        ) {
-            gamma_min <- x$gamma %>%
-                filter(method == methods[i]) %>%
-                pull(gamma_min)
+        if (do_gamma) {
+            gamma_min <- gamma[gamma_idx, "gamma_min"]
         } else {
             gamma_min <- NA_real_
         }
 
-        # calculate total width of the interval(s)
-        width <- { x_sub[, "upper"] - x_sub[, "lower"] } %>% sum(.)
-
-        # calculate whether interval covers true effect
-        coverage_true <- as.numeric(any(
-            x_sub[, "lower"] <= x$effect & x$effect <= x_sub[, "upper"]
-        ))
-
         # Calculate score for CI methods
-        if (grepl("CI", methods[i])) {
+        if (is_ci_method(meth)) {
             score <- width +
-                (2/0.05) * min(abs(x_sub[, "lower"]), abs(x_sub[, "upper"])) *
+                (2 / 0.05) * min(abs(x_sub[, "lower"]), abs(x_sub[, "upper"])) *
                 (1 - coverage_true)
         } else {
             score <- NA_real_
         }
 
         # count number of intervals
-        if (
-            grepl(
-                "Harmonic Mean.*CI|k-Trials.*CI|Pearson.*CI|Edgington.*CI|Fisher.*CI",
-                methods[i]
-            )
-        ) {
+        if (is_new) {
             n <- nrow(x_sub)
         } else {
-            n <- NA_real_
+            n <- NA_integer_
         }
 
-        out <- tibble(
-            method = methods[i],
+        out <- tibble::tibble(
+            method = meth,
             coverage_true = coverage_true,
             coverage_effects = coverage_effects,
             coverage_effects_min1 = coverage_effects_min1,
             coverage_effects_all = coverage_effects_all,
             coverage_prediction = coverage_prediction,
             gammaMin = gamma_min,
+            gammaMin_include = is_new,
             n = n,
+            n_include = is_new,
             width = width,
             score = score
         )
-
         # return
         out
     }
 }
 
-# This function is called when an error happens
-error_function <- function(cond, pars, error_obj = NULL, fun_name) {
-    text <- capture.output(cond)
-    out_msg <- paste0(
-        "Error in ", fun_name, "iteration: ", i, "\n\n",
-        "Parameters are:\n\n",
-        paste0(paste0(names(pars), ": ", pars[1, ]), collapse = "\n"),
-        "\n\nThe error message is:\n", text, "\n\n",
-        ifelse(
-            is.null(error_obj),
-            "\nSee pars.rds for the saved parameters.\n\n",
-            "\nSee error.rds for the last available object and pars.rds for the saved parameters.\n\n"
-        ),
-        "--------------------------------------------------------------------------------------\n"
-    )
-    cat(out_msg, file = "error.txt", append = TRUE)
-    saveRDS(pars, file = "pars.rds")
-    if (!is.null(error_obj)) saveRDS(error_obj, file = "error.rds")
-    return(NA)
-}
 
 #' Simulate N times, compute CIs, assess CIs
 #'
@@ -985,7 +911,8 @@ sim <- function(
     o <- foreach::foreach(
         j = seq_len(nrow(grid)),
         .options.RNG = seed,
-        .errorhandling = "pass") %dorng% {
+        .errorhandling = "pass"
+    ) %dorng% {
 
         if (file.exists("error.txt")) {
             # if error happened, skip the rest of the loop iterations
@@ -993,7 +920,7 @@ sim <- function(
         } else {
 
             cat("start", j, "of", nrow(grid), fill = TRUE)
-            pars <- grid %>% slice(j)
+            pars <- grid[j, ]
 
             # av is a list with elements that are either a tibble or NA
             # (the latter in case of an error)
@@ -1008,20 +935,8 @@ sim <- function(
 
                 # Repeat this N times. Simulate studies, calculate CIs,
                 # calculate measures
-                res <- tryCatch(
-                    {
-                    #if(i == 17) stop("Error in iteration 17")
-                        simREbias(
-                            k = pars$k, sampleSize = pars$sampleSize,
-                            effect = pars$effect, I2 = pars$I2,
-                            heterogeneity = pars$heterogeneity,
-                            dist = pars$dist, bias = pars$bias,
-                            large = pars$large, check_inputs = FALSE
-                        )
-                    },
-                    error = function(cond) error_function(cond = cond, pars = pars, fun_name = "simREbias")
-                )
-
+                res <- sim_effects(pars = pars, i = i)
+                CIs <- 
                 CIs <- tryCatch({
                     if (length(res) == 1L && is.na(res)) NA else sim2CIs(x = res)
                     },
