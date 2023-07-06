@@ -42,7 +42,7 @@ library(tictoc)
 
 # Helper function to convert the id_strings into proper names
 # This function is used in:
-# - sim2CI
+# - get_new_intervals
 make_name <- function(id_strings) {
     str <- strsplit(id_strings, split = "_")
     nms <- vapply(
@@ -95,12 +95,17 @@ error_function <- function(cond, pars, error_obj = NULL, fun_name, i) {
         "Parameters are:\n\n",
         paste0(paste0(names(pars), ": ", pars[1, ]), collapse = "\n"),
         "\n\nThe error message is:\n", text, "\n\n",
-        ifelse(
-            is.null(error_obj),
-            "\nSee pars.rds for the saved parameters.\n\n",
-            "\nSee error.rds for the last available object and pars.rds for the saved parameters.\n\n"
-        ),
-        "--------------------------------------------------------------------------------------\n"
+        if (is.null(error_obj)) {
+            "See pars.rds for the saved parameters."
+        } else {
+            paste0(
+                "See error.rds for the last available object",
+                " and pars.rds for the saved parameters."
+            )
+        },
+        "\n\n\n",
+        "---------------------------------------------------------------------",
+        "-----------"
     )
     cat(out_msg, file = "error.txt", append = TRUE)
     saveRDS(pars, file = "pars.rds")
@@ -112,6 +117,8 @@ error_function <- function(cond, pars, error_obj = NULL, fun_name, i) {
 ## `distr` to be either `"f"` or `"chisq"`. This is useful because we do not
 ## actually need to worry about including `distr = "f"` in the `args` argument
 ## when constructing expressions of the form `do.call("hMeanChiSqMu", args)`.
+## These functions are used in:
+## - sim2CIs
 hMeanChiSqMu_f <- function(...) {
     hMean::hMeanChiSqMu(distr = "f", ...)
 }
@@ -125,9 +132,11 @@ hMeanChiSqMu_chisq <- function(...) {
 ## and then extract the estimate and CIs. The idea is to make a function of the
 ## method, the individual studies, and their SEs. Then we can simply use this
 ## and pass only what we really need. Most of these function function are only
-## used within the main function called get_classic_intervals().
+## used within the main function called get_classic_intervals(). Thus, these
+## functions contain the logic that ultimately return a data.frame with columns
+## `lower`, `upper`, `method`, `ci_exists`.
 ## This main function is used in:
-## - sim2CI
+## - sim2CIs
 
 ## Fit model with Henmi & Copas
 get_classic_obj_hc <- function(thetahat, se, control) {
@@ -201,7 +210,10 @@ get_classic_interval <- function(method, obj) {
     )
 }
 
-## The vectorised version of the above function with
+## This is the final wrapper function of all the above functions
+## related to the calculation of CIs for the classic methods.
+## This function is used in:
+## - sim2CIs
 get_classic_intervals <- function(methods, thetahat, se) {
     # set control options
     control <- list(maxiter = 1e4, stepadj = 0.25)
@@ -248,6 +260,7 @@ get_classic_intervals <- function(methods, thetahat, se) {
         lower = ci[, 1L],
         upper = ci[, 2L],
         method = names,
+        ci_exists = TRUE,
         stringsAsFactors = FALSE,
         row.names = NULL
     )
@@ -257,6 +270,105 @@ get_classic_intervals <- function(methods, thetahat, se) {
     }
     # return
     out
+}
+
+## The following functions do something quite similar to the ones above,
+## i.e. they are helpers called within get_new_intervals(), which itself
+## is called in sim2CIs(). Thus, these functions contain the logic that is
+## needed to ultimately return a data.frame with columns `lower`, `upper`,
+## `method`, and `ci_exists`.
+## These functions are used in:
+## - sim2CIs
+
+## list all  the p-value functions here
+get_p_value_functions <- function(methods) {
+    p_val_fcts <- list(
+        hMean_f = hMeanChiSqMu_f,
+        hMean_chisq = hMeanChiSqMu_chisq,
+        ktrials = hMean::kTRMu,
+        pearson = hMean::pPearsonMu,
+        edgington = hMean::pEdgingtonMu,
+        fisher = hMean::pFisherMu
+    )
+    p_val_fcts[methods]
+}
+
+## list all the argument configurations here
+get_p_value_args <- function(tau2, phi) {
+    list(
+        none = list(
+            heterogeneity = "none",
+            check_inputs = FALSE
+        ),
+        additive = list(
+            heterogeneity = "additive",
+            tau2 = tau2,
+            check_inputs = FALSE
+        ),
+        multiplicative = list(
+            heterogeneity = "multiplicative",
+            phi = phi,
+            check_inputs = FALSE
+        )
+    )
+}
+
+# loop over each of the function/argument combination
+## calculate the CIs, return a data.frame
+get_new_cis <- function(thetahat, se, p_funcs, arguments) {
+
+    # Construct a grid from p-value-functions and argument
+    # configurations
+    g <- expand.grid(
+        p_funcs_idx = seq_along(p_funcs),
+        arguments_idx = seq_along(arguments)
+    )
+    # Extract columns since looping over
+    # atomic vectors is faster
+    p_funcs_idx <- g$p_funcs_idx
+    p_arguments_idx <- g$arguments_idx
+
+    # Pre-allocate memory for output
+    out <- vector("list", length(p_funcs_idx))
+    names(out) <- paste0(
+        names(p_funcs)[p_funcs_idx],
+        "_",
+        names(arguments)[p_arguments_idx]
+    )
+
+    # compute CIs
+    for (k in seq_along(p_funcs_idx)) {
+        # compute CI
+        out[[k]] <- hMean::hMeanChiSqCI(
+            thetahat = thetahat,
+            se = se,
+            alternative = "none",
+            pValueFUN = p_funcs[[p_funcs_idx[k]]],
+            pValueFUN_args = arguments[[p_arguments_idx[k]]]
+        )
+    }
+
+    # put everything in a data frame
+    df <- do.call(
+        "rbind",
+        lapply(
+            seq_along(out),
+            function(out, i) {
+                ci <- out[[i]]$CI
+                data.frame(
+                    lower = ci[, 1L],
+                    upper = ci[, 2L],
+                    method = make_name(id_strings = names(out)[i]),
+                    ci_exists = if (all(is.na(ci))) FALSE else TRUE,
+                    stringsAsFactors = FALSE,
+                    row.names = NULL
+                )
+            },
+            out = out
+        )
+    )
+
+    df
 }
 
 
@@ -547,23 +659,108 @@ sim_effects <- function(pars, i) {
 #' @return a tibble with columns \code{lower}, \code{upper}, and \code{method}.
 sim2CIs <- function(x) {
 
+    # Get the thetahats and the SEs
     thetahat <- x[, 1L]
     se <- x[, 2L]
 
+    # get the CIs of the classic methods
     classic_methods <- get_classic_intervals(
         methods = c("hk_ci", "hk_pi", "reml_ci", "reml_pi", "hc_ci"),
         thetahat = thetahat,
         se = se
     )
 
-    phi <- hMean::estimatePhi(thetahat = x[])
+    # For the new methods, we need phi and tau2 to estimate heterogeneity
+    # we estimate phi ourselves and for tau2 we check whether it has already
+    # been computed. If not, estimate it ourselves
+    phi <- hMean::estimatePhi(thetahat = thetahat, se = se)
     tau2 <- attributes(classic_methods)$tau2
     if (is.null(tau2)) tau2 <- hMean::estimateTau2()
 
     new_methods <- get_new_intervals(
-        methods = c(),
-        thetahat = c(),
-        se = c()
+        methods = c(
+            "hMean_f",
+            "hMean_chisq",
+            "ktrials",
+            "pearson",
+            "edgington",
+            "fisher"
+        ),
+        thetahat  = thetahat,
+        se = se,
+        heterogeneity = pars$heterogeneity,
+        phi = phi,
+        tau2 = tau2
+    )
+
+    get_new_intervals <- function(
+        methods,
+        thetahat,
+        se,
+        phi,
+        tau2
+    ) {
+
+        # get a list of p-value functions
+        p_funcs <- get_p_value_functions(methods = methods)
+        # get a list of arguments
+        arguments <- get_p_value_args(phi = phi, tau2 = tau2)
+        # get the cis
+        cis <- get_new_cis(
+            thetahat = thetahat,
+            se = se,
+            p_funcs = p_funcs,
+            arguments = arguments
+        )
+
+
+        # For each method, add a name, and put everything into a data
+        # frame
+        new_methods <- lapply(
+            seq_along(out),
+            function(i) {
+                y <- out[[i]]
+                method_name <- make_name(names(out)[i])
+                # Output CIs
+                CI <- tibble::as_tibble(y$CI)
+                CI$method <- method_name
+                # Output Gamma
+                gam <- y$gamma
+                ci_exists <- !all(is.na(gam))
+                if (!ci_exists) {
+                    gamma_min <- NA_real_
+                    x_gamma_min <- NA_real_
+                } else {
+                    idx_min <- which.min(gam[, 2L])
+                    gamma_min <- gam[, 2L][idx_min]
+                    x_gamma_min  <- gam[, 1L][idx_min]
+                }
+                gamma <- tibble::tibble(
+                    method = method_name,
+                    gamma_min = gamma_min,
+                    x_gamma_min = x_gamma_min
+                )
+                list(CI = CI, gamma = gamma)
+            }
+        )
+
+        out
+    }
+
+    # get the CIs of the new methods
+    new_methods <- get_new_intervals(
+        methods = c(
+            "hMean_f",
+            "hMean_chisq",
+            "ktrials",
+            "pearson",
+            "edgington",
+            "fisher"
+        ),
+        thetahat = thetahat,
+        se = se,
+        phi = phi,
+        tau2 = tau2,
     )
 
 
@@ -671,7 +868,14 @@ calc_ci <- function(x) {
 # CIs <- tryCatch({
 #     if (length(res) == 1L && is.na(res)) NA else sim2CIs(x = res)
 #     },
-#     error = function(cond) error_function(cond = cond, pars = pars, error_obj = res, fun_name = "sim2CIs")
+#     error = function(cond) {
+#         error_function(
+#             cond = cond,
+#             pars = pars,
+#             error_obj = res,
+#             fun_name = "sim2CIs"
+#         )
+#     }
 # )
 
 ## Helper function that returns whether or not a given method is
