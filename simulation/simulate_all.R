@@ -272,6 +272,9 @@ get_classic_intervals <- function(methods, thetahat, se) {
         upper = ci[, 2L],
         method = names,
         ci_exists = TRUE,
+        is_ci = grepl("_ci$", methods),
+        is_pi = grepl("_pi$", methods),
+        is_new = FALSE,
         stringsAsFactors = FALSE,
         row.names = NULL
     )
@@ -400,6 +403,9 @@ get_new_ci_gamma <- function(thetahat, se, p_funcs, arguments) {
             upper = ci_mat[, 2L],
             method = rep2(names(ci), each = ci_row),
             ci_exists = ifelse(is.na(ci_mat[, 1L]), FALSE, TRUE),
+            is_ci = TRUE,
+            is_pi = TRUE,
+            is_new = TRUE,
             stringsAsFactors = FALSE,
             row.names = NULL
         ),
@@ -804,25 +810,10 @@ calc_ci <- function(x, pars, i) {
 
 
 
+################################################################################
+#                     Calculating the output measures                          #
+################################################################################
 
-
-
-
-
-
-
-
-
-## Helper function that returns whether or not a given method is
-## one of the new methods or not
-is_new_method <- function(method) {
-    grepl("(Harmonic Mean|k-Trials|Pearson|Edgington|Fisher)", method)
-}
-## Helper function to determine whether the current method is a CI
-## or a prediction interval
-is_ci_method <- function(method) {
-    grepl("CI", method)
-}
 
 #' Computes quality measures for CIs
 #'
@@ -844,10 +835,16 @@ is_ci_method <- function(method) {
 #' \item{\code{n}}{Number of intervals}
 CI2measures <- function(x, pars) {
 
+    ci_df <- x$CIs
     # get the method corresponding to each row of the CIs
-    row_method <- x$CIs$method
+    row_method <- ci_df$method
     # list all methods
-    all_methods <- unique(row_method)
+    all_methods_idx <- !duplicated(row_method)
+    all_methods <- row_method[all_methods_idx]
+    # Get some other variables in order to check what measure to calculate
+    is_ci <- ci_df$is_ci[all_methods_idx]
+    is_pi <- ci_df$is_pi[all_methods_idx]
+    is_new <- ci_df$is_new[all_methods_idx]
     # convert CIs to matrix
     cis <- as.matrix(x$CIs[c("lower", "upper")])
     # get gamma
@@ -858,6 +855,117 @@ CI2measures <- function(x, pars) {
     # get the effect
     effect <- x$effect
 
+
+
+    get_measure_funs <- function(is_new, is_ci, is_pi) {
+        f <- list(
+            # calculate proportion of deltas covered by the interval
+            coverage_effects = function(cis, delta) {
+                mean(
+                    vapply(
+                        delta,
+                        function(d) {
+                            any(cis[, "lower"] <= d & d <= cis[, "upper"])
+                        },
+                        logical(1L)
+                    )
+                )
+            },
+            # calculate how many times at least one study-specific effect
+            # is covered
+            coverage_effects_min1 = function(cis, delta) {
+                found <- FALSE
+                for (d in delta) {
+                    if (any(cis[, "lower"] <= d & d <= cis[, "upper"])) {
+                        found <- TRUE
+                        break
+                    }
+                }
+                as.numeric(found)
+            },
+            # calculate whether all deltas covered by CI
+            coverage_effects_all = function(cis, delta) {
+                as.numeric(
+                    all(
+                        vapply(
+                            delta,
+                            function(d) {
+                                any(
+                                    cis[, "lower"] <= d &
+                                    d <= cis[, "upper"]
+                                )
+                            },
+                            logical(1L)
+                        )
+                    )
+                )
+            },
+            # calculate whether interval covers future study
+            # (only for hMean, hMean_additive, hMean_multiplicative)
+            coverage_prediction = function(cis) {
+                new_study <- simREbias(
+                    k = 1, sampleSize = pars$sampleSize,
+                    effect = pars$effect, I2 = pars$I2,
+                    heterogeneity = pars$heterogeneity, dist = pars$dist, large = 0,
+                    bias = "none"
+                )[, "delta"]
+                as.numeric(
+                    any(
+                        cis[, "lower"] <= new_study & new_study <= cis[, "upper"]
+                    )
+                )
+            },
+            # calculate the width
+            width = function(cis) {
+                sum(cis[, "upper"] - cis[, "lower"])
+            },
+            coverage_true = function(cis, effect) {
+                as.numeric(any(cis[, "lower"] <= effect & effect <= cis[, "upper"]))
+            },
+            gamma_min = function(gamma) {
+
+            }
+
+
+        )
+
+    }
+
+
+        width <- sum(x_sub[, "upper"] - x_sub[, "lower"])
+
+        # calculate whether interval covers true effect
+        coverage_true <- as.numeric(
+            any(x_sub[, "lower"] <= effect & effect <= x_sub[, "upper"])
+        )
+
+        # get gamma_min to later attach it to the function output
+        if (do_gamma) {
+            gamma_min <- gamma[gamma_idx, "gamma_min"]
+        } else {
+            gamma_min <- NA_real_
+        }
+
+        # Calculate score for CI methods
+        if (is_ci_method(meth)) {
+            score <- width +
+                (2 / 0.05) * min(abs(x_sub[, "lower"]), abs(x_sub[, "upper"])) *
+                (1 - coverage_true)
+        } else {
+            score <- NA_real_
+        }
+
+        # count number of intervals
+        if (is_new) {
+            n <- nrow(x_sub)
+        } else {
+            n <- NA_integer_
+        }
+
+    get_measures <- function(method, data) {
+    }
+
+
     foreach::foreach(i = seq_along(all_methods), .combine = rbind) %do% {
 
         # Current method
@@ -866,8 +974,6 @@ CI2measures <- function(x, pars) {
         meth_idx <- row_method == meth
         # Subset by method
         x_sub <- cis[meth_idx, , drop = FALSE]
-        # See whether we need to include gamma
-        is_new <- if (is_new_method(meth)) TRUE else FALSE
         # Subset gamma
         if (is_new) {
             gamma_idx <- gamma_methods == meth
