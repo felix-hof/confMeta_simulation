@@ -24,7 +24,7 @@
 ##                  assess CIs
 ##
 ## Florian Gerber, florian.gerber@uzh.ch, Oct. 14, 2021
-rm(list = ls())
+# rm(list = ls())
 remotes::install_github("felix-hof/hMean", ref = "dev")
 library(hMean)
 library(tidyverse)
@@ -80,6 +80,17 @@ make_name <- function(id_strings) {
         character(1L)
     )
     gsub("\\s+", " ", nms)
+}
+
+## This function repeats each element of `x` exactly `each`
+## times. However, in contrast to the regular `rep()` function
+## `each` can also be vector of the same length as 'x'.
+## repeat each element of `x` `each` times
+rep2 <- function(x, each) {
+    do.call(
+        "c",
+        mapply(FUN = rep, x = x, each = each)
+    )
 }
 
 ## This function is only used in tryCatch() blocks in case of an error.
@@ -246,7 +257,7 @@ get_classic_intervals <- function(methods, thetahat, se) {
     )
     names(objs) <- obj_fit
     # get the CIs
-    ci <- matrix(0, nrow = length(methods), ncol = 2L)
+    ci <- matrix(NA_real_, nrow = length(methods), ncol = 2L)
     for (i in seq_along(methods)) {
         ci[i, ] <- get_classic_interval(
             method = methods[i],
@@ -313,9 +324,25 @@ get_p_value_args <- function(tau2, phi) {
     )
 }
 
+
+## This returns the x and y coords of the p-value function
+## between the smallest effect in the CI and the largest
+## effect in the CI.
+get_gamma_x_y <- function(gamma) {
+    gamma_exists <- all(is.na(gamma))
+    if (gamma_exists) {
+        c(x = NA_real_, y = NA_real_)
+    } else {
+        y <- gamma[, 2L]
+        x <- gamma[, 1L]
+        min_idx <- which.min(y)
+        c(x = x[min_idx], y = y[min_idx])
+    }
+}
+
 # loop over each of the function/argument combination
 ## calculate the CIs, return a data.frame
-get_new_cis <- function(thetahat, se, p_funcs, arguments) {
+get_new_ci_gamma <- function(thetahat, se, p_funcs, arguments) {
 
     # Construct a grid from p-value-functions and argument
     # configurations
@@ -328,49 +355,87 @@ get_new_cis <- function(thetahat, se, p_funcs, arguments) {
     p_funcs_idx <- g$p_funcs_idx
     p_arguments_idx <- g$arguments_idx
 
-    # Pre-allocate memory for output
-    out <- vector("list", length(p_funcs_idx))
-    names(out) <- paste0(
+    # Get the number of FUN/arg combinations
+    l <- nrow(g)
+
+    # make names from the p_value function and the heterogeneity
+    nms <- paste0(
         names(p_funcs)[p_funcs_idx],
         "_",
         names(arguments)[p_arguments_idx]
     )
 
+    # Pre-allocate memory for output
+    ci <- vector("list", l)
+    names(ci) <- nms
+    gamma <- matrix(NA_real_, ncol = 2L, nrow = l)
+
+    # store the number of rows for each method
+    ci_row <- integer(l)
+
     # compute CIs
-    for (k in seq_along(p_funcs_idx)) {
+    for (k in seq_len(l)) {
         # compute CI
-        out[[k]] <- hMean::hMeanChiSqCI(
+        res <- hMean::hMeanChiSqCI(
             thetahat = thetahat,
             se = se,
             alternative = "none",
             pValueFUN = p_funcs[[p_funcs_idx[k]]],
             pValueFUN_args = arguments[[p_arguments_idx[k]]]
         )
+        # CI related stuff
+        ci[[k]] <- res$CI
+        ci_row[k] <- nrow(res$CI)
+        # gamma related stuff
+        gamma[k, ] <- get_gamma_x_y(res$gamma)
     }
 
-    # put everything in a data frame
-    df <- do.call(
-        "rbind",
-        lapply(
-            seq_along(out),
-            function(out, i) {
-                ci <- out[[i]]$CI
-                data.frame(
-                    lower = ci[, 1L],
-                    upper = ci[, 2L],
-                    method = make_name(id_strings = names(out)[i]),
-                    ci_exists = if (all(is.na(ci))) FALSE else TRUE,
-                    stringsAsFactors = FALSE,
-                    row.names = NULL
-                )
-            },
-            out = out
+    # rbind all of the list elements
+    ci_mat <- do.call("rbind", ci)
+
+    # return the data.frame
+    list(
+        CI = data.frame(
+            lower = ci_mat[, 1L],
+            upper = ci_mat[, 2L],
+            method = rep2(names(ci), each = ci_row),
+            ci_exists = ifelse(is.na(ci_mat[, 1L]), FALSE, TRUE),
+            stringsAsFactors = FALSE,
+            row.names = NULL
+        ),
+        gamma = data.frame(
+            gamma_min = gamma[, 2L],
+            x_gamma_min = gamma[, 1L],
+            method = nms,
+            stringsAsFactors = FALSE,
+            row.names = NULL
         )
     )
-
-    df
 }
 
+## This function is the main function we use in order to
+## calculate the CI as well as the minima and maxima of the
+## p-value function.
+get_new_intervals <- function(
+    methods,
+    thetahat,
+    se,
+    phi,
+    tau2
+) {
+
+    # get a list of p-value functions
+    p_funcs <- get_p_value_functions(methods = methods)
+    # get a list of arguments
+    arguments <- get_p_value_args(phi = phi, tau2 = tau2)
+    # get the cis
+    get_new_ci_gamma(
+        thetahat = thetahat,
+        se = se,
+        p_funcs = p_funcs,
+        arguments = arguments
+    )
+}
 
 ################################################################################
 #                    Simulating effects and standard errors                    #
@@ -419,7 +484,7 @@ simRE <- function(
             ## omega^2 = tau^2 * (nu-2)/nu
             ## We use nu=4 dof then omega^2 = tau^2/2, so half as
             ## large as the heterogeneity variance under normality.
-            delta <- rst(n = k, xi = effect, omega = sqrt(tau2 / 2), nu = 4)
+            delta <- sn::rst(n = k, xi = effect, omega = sqrt(tau2 / 2), nu = 4)
         } else {
             delta <- rnorm(n = k, mean = effect, sd = sqrt(tau2))
         }
@@ -638,9 +703,10 @@ sim_effects <- function(pars, i) {
             error_function(
                 cond = cond,
                 pars = pars,
-                fun_name = "simREbias",
+                fun_name = "sim_effects",
                 i = i
             )
+            NA
         }
     )
 }
@@ -662,6 +728,10 @@ sim2CIs <- function(x) {
     # Get the thetahats and the SEs
     thetahat <- x[, 1L]
     se <- x[, 2L]
+    delta <- x[, 3L]
+
+    # Store the attributes of x
+    att <- attributes(x)
 
     # get the CIs of the classic methods
     classic_methods <- get_classic_intervals(
@@ -677,77 +747,7 @@ sim2CIs <- function(x) {
     tau2 <- attributes(classic_methods)$tau2
     if (is.null(tau2)) tau2 <- hMean::estimateTau2()
 
-    new_methods <- get_new_intervals(
-        methods = c(
-            "hMean_f",
-            "hMean_chisq",
-            "ktrials",
-            "pearson",
-            "edgington",
-            "fisher"
-        ),
-        thetahat  = thetahat,
-        se = se,
-        heterogeneity = pars$heterogeneity,
-        phi = phi,
-        tau2 = tau2
-    )
-
-    get_new_intervals <- function(
-        methods,
-        thetahat,
-        se,
-        phi,
-        tau2
-    ) {
-
-        # get a list of p-value functions
-        p_funcs <- get_p_value_functions(methods = methods)
-        # get a list of arguments
-        arguments <- get_p_value_args(phi = phi, tau2 = tau2)
-        # get the cis
-        cis <- get_new_cis(
-            thetahat = thetahat,
-            se = se,
-            p_funcs = p_funcs,
-            arguments = arguments
-        )
-
-
-        # For each method, add a name, and put everything into a data
-        # frame
-        new_methods <- lapply(
-            seq_along(out),
-            function(i) {
-                y <- out[[i]]
-                method_name <- make_name(names(out)[i])
-                # Output CIs
-                CI <- tibble::as_tibble(y$CI)
-                CI$method <- method_name
-                # Output Gamma
-                gam <- y$gamma
-                ci_exists <- !all(is.na(gam))
-                if (!ci_exists) {
-                    gamma_min <- NA_real_
-                    x_gamma_min <- NA_real_
-                } else {
-                    idx_min <- which.min(gam[, 2L])
-                    gamma_min <- gam[, 2L][idx_min]
-                    x_gamma_min  <- gam[, 1L][idx_min]
-                }
-                gamma <- tibble::tibble(
-                    method = method_name,
-                    gamma_min = gamma_min,
-                    x_gamma_min = x_gamma_min
-                )
-                list(CI = CI, gamma = gamma)
-            }
-        )
-
-        out
-    }
-
-    # get the CIs of the new methods
+    # get the CIs and minimum gamma values
     new_methods <- get_new_intervals(
         methods = c(
             "hMean_f",
@@ -760,123 +760,57 @@ sim2CIs <- function(x) {
         thetahat = thetahat,
         se = se,
         phi = phi,
-        tau2 = tau2,
+        tau2 = tau2
     )
 
-
-    ## p-value functions to try
-    ## Note: For names of this list, use underscores only to
-    ##       separate distr argument. Do not use it for method names
-    f <- list(
-        hMean_f = hMeanChiSqMu_f,
-        hMean_chisq = hMeanChiSqMu_chisq,
-        ktrials = hMean::kTRMu,
-        pearson = hMean::pPearsonMu,
-        edgington = hMean::pEdgingtonMu,
-        fisher = hMean::pFisherMu
-    )
-    ## default args
-    arguments <- list(
-        none = list(
-            heterogeneity = "none",
-            check_inputs = FALSE
-        ),
-        additive = list(
-            heterogeneity = "additive",
-            tau2 = REML$tau2,
-            check_inputs = FALSE
-        ),
-        multiplicative = list(
-            heterogeneity = "multiplicative",
-            phi = estimatePhi(thetahat = x[, "theta"], se = x[, "se"]),
-            check_inputs = FALSE
-        )
-    )
-    ## calculate the CIs
-    out <- vector("list", length(f) * length(arguments))
-    counter <- 1L
-    for (k in seq_along(f)) {
-        for (l in seq_along(arguments)) {
-            # get the current p-value function
-            fun <- names(f)[k]
-            het <- names(arguments)[l]
-            names(out)[counter] <- paste0(fun, "_", het)
-            # compute CI
-            out[[counter]] <- hMean::hMeanChiSqCI(
-                thetahat = x[, "theta"],
-                se = x[, "se"],
-                alternative = "none",
-                pValueFUN = f[[k]],
-                pValueFUN_args = arguments[[l]]
-            )
-            counter <- counter + 1L
-        }
-    }
-
-    # For each method, add a name, and put everything into a data
-    # frame
-    new_methods <- lapply(
-        seq_along(out),
-        function(i) {
-            y <- out[[i]]
-            method_name <- make_name(names(out)[i])
-            # Output CIs
-            CI <- tibble::as_tibble(y$CI)
-            CI$method <- method_name
-            # Output Gamma
-            gam <- y$gamma
-            ci_exists <- !all(is.na(gam))
-            if (!ci_exists) {
-                gamma_min <- NA_real_
-                x_gamma_min <- NA_real_
-            } else {
-                idx_min <- which.min(gam[, 2L])
-                gamma_min <- gam[, 2L][idx_min]
-                x_gamma_min  <- gam[, 1L][idx_min]
-            }
-            gamma <- tibble::tibble(
-                method = method_name,
-                gamma_min = gamma_min,
-                x_gamma_min = x_gamma_min
-            )
-            list(CI = CI, gamma = gamma)
-        }
-    )
-    CI <- do.call("rbind", lapply(new_methods, "[[", i = "CI"))
-    gamma <- do.call("rbind", lapply(new_methods, "[[", i = "gamma"))
-
-    # return
     list(
-        CIs = rbind(classic_methods, CI),
-        model = attributes(x)$heterogeneity,
+        CIs = rbind(classic_methods, new_methods$CI),
+        model = att$heterogeneity,
         gamma = gamma,
-        theta = x[, "theta"],
-        delta = x[, "delta"],
-        effect = attributes(x)$effect
+        theta = thetahat,
+        delta = delta,
+        effect = att$effect
     )
 }
 
-calc_ci <- function(x) {
+
+## Wrapper function around sim2CIs() that, in case of errors, runs
+## the error_function such that the simulation stops immediately
+## instead of continuing to calculate all the other scenarios
+calc_ci <- function(x, pars, i) {
+    # if error in function before, just return NA back.
+    # Otherwise, run sim2CIs. If an error happens, log everything and
+    # return NA
     if (length(x) == 1L && is.na(x)) {
         NA
     } else {
-        sim2CIs(x = x)
+        tryCatch(
+            {
+                sim2CIs(x = x)
+            },
+            error = function(cond) {
+                error_function(
+                    cond = cond,
+                    pars = pars,
+                    error_obj = x,
+                    fun_name = "calc_ci"
+                )
+                NA
+            }
+        )
     }
 }
 
 
-# CIs <- tryCatch({
-#     if (length(res) == 1L && is.na(res)) NA else sim2CIs(x = res)
-#     },
-#     error = function(cond) {
-#         error_function(
-#             cond = cond,
-#             pars = pars,
-#             error_obj = res,
-#             fun_name = "sim2CIs"
-#         )
-#     }
-# )
+
+
+
+
+
+
+
+
+
 
 ## Helper function that returns whether or not a given method is
 ## one of the new methods or not
@@ -1140,7 +1074,7 @@ sim <- function(
                 # Repeat this N times. Simulate studies, calculate CIs,
                 # calculate measures
                 res <- sim_effects(pars = pars, i = i)
-                CIs <- 
+                CIs <- calc_ci(x = res, pars = pars, i = i)
                 CIs <- tryCatch({
                     if (length(res) == 1L && is.na(res)) NA else sim2CIs(x = res)
                     },
@@ -1291,8 +1225,7 @@ grid <- expand.grid(
     # number of large studies
     large = c(0, 1, 2),
     stringsAsFactors = FALSE
-) %>%
-    arrange(desc(heterogeneity))
+)
 
 ## run simulation, e.g., on the Rambo server of I-MATH
 tic()
