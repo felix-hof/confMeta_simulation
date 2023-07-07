@@ -766,7 +766,7 @@ sim2CIs <- function(x) {
     list(
         CIs = rbind(classic_methods, new_methods$CI),
         model = att$heterogeneity,
-        gamma = gamma,
+        gamma = new_methods$gamma,
         theta = thetahat,
         delta = delta,
         effect = att$effect
@@ -793,7 +793,8 @@ calc_ci <- function(x, pars, i) {
                     cond = cond,
                     pars = pars,
                     error_obj = x,
-                    fun_name = "calc_ci"
+                    fun_name = "calc_ci",
+                    i = i
                 )
                 NA
             }
@@ -1075,11 +1076,6 @@ sim <- function(
                 # calculate measures
                 res <- sim_effects(pars = pars, i = i)
                 CIs <- calc_ci(x = res, pars = pars, i = i)
-                CIs <- tryCatch({
-                    if (length(res) == 1L && is.na(res)) NA else sim2CIs(x = res)
-                    },
-                    error = function(cond) error_function(cond = cond, pars = pars, error_obj = res, fun_name = "sim2CIs")
-                )
                 out <- tryCatch({
                     if (length(res) == 1L && is.na(CIs)) NA else CI2measures(x = CIs, pars = pars)
                     },
