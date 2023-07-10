@@ -24,17 +24,14 @@
 ##                  assess CIs
 ##
 ## Florian Gerber, florian.gerber@uzh.ch, Oct. 14, 2021
-## Felix Hofmann, felix.hofmann2@uzh.ch, Sep. 14, 2022
+## Felix Hofmann, felix.hofmann2@uzh.ch, Oct. 26, 2021
 # rm(list = ls())
-# remotes::install_github("felix-hof/hMean", ref = "dev")
+remotes::install_github("felix-hof/hMean", ref = "dev")
 library(hMean)
-library(tidyverse)
-library(rlang)
 library(doParallel)
 library(doRNG)
 library(RhpcBLASctl)
 blas_set_num_threads(1) # multi threading of BLAS
-library(tictoc)
 
 ################################################################################
 #                              Helper functions                                #
@@ -90,7 +87,7 @@ make_name <- function(id_strings) {
 rep2 <- function(x, each) {
     do.call(
         "c",
-        mapply(FUN = rep, x = x, each = each)
+        mapply(FUN = rep, x = x, each = each, SIMPLIFY = FALSE)
     )
 }
 
@@ -103,7 +100,7 @@ rep2 <- function(x, each) {
 error_function <- function(cond, pars, error_obj = NULL, fun_name, i) {
     text <- capture.output(cond)
     out_msg <- paste0(
-        "Error in ", fun_name, "iteration: ", i, "\n\n",
+        "Error in ", fun_name, " iteration: ", i, "\n\n",
         "Parameters are:\n\n",
         paste0(paste0(names(pars), ": ", pars[1, ]), collapse = "\n"),
         "\n\nThe error message is:\n", text, "\n\n",
@@ -701,7 +698,7 @@ sim_effects <- function(pars, i) {
                     dist = dist,
                     large = large,
                     bias = bias,
-                    verbose = TRUE,
+                    verbose = FALSE,
                     check_inputs = FALSE
                 )
             )
@@ -812,7 +809,7 @@ calc_ci <- function(x, pars, i) {
 
 
 ################################################################################
-#                     Calculating the output measures                          #
+#            Calculating the output measures for each individual CI            #
 ################################################################################
 
 calc_coverage_effects <- function(cis, delta, ci_exists) {
@@ -1081,8 +1078,11 @@ CI2measures <- function(x, pars) {
     out <- vector("list", length(unique_methods))
     # loop over each of the methods
     for (k in seq_along(unique_methods)) {
-        # Get the current method
+        # Get the current method and characteristics
         curr_method <- unique_methods[k]
+        curr_is_ci <- is_ci[k]
+        curr_is_pi <- is_pi[k]
+        curr_is_new <- is_new[k]
         # create the argument list
         arg_list <- list(
             cis = cis[ci_method == curr_method, , drop = FALSE],
@@ -1094,11 +1094,11 @@ CI2measures <- function(x, pars) {
         )
         # Get the unevaluated function calls for the current method
         curr_meas <- get_measures(
-            is_ci = is_ci[k],
-            is_pi = is_pi[k],
-            is_new = is_new[k]
+            is_ci = curr_is_ci,
+            is_pi = curr_is_pi,
+            is_new = curr_is_new
         )
-        # Calculate the get_measures
+        # Calculate the measures
         out[[k]] <- data.frame(
             value = vapply(
                 curr_meas,
@@ -1109,6 +1109,9 @@ CI2measures <- function(x, pars) {
             ),
             measure = names(curr_meas),
             method = curr_method,
+            is_ci = curr_is_ci,
+            is_pi = curr_is_pi,
+            is_new = curr_is_new,
             stringsAsFactors = FALSE,
             row.names = NULL
         )
@@ -1120,6 +1123,157 @@ CI2measures <- function(x, pars) {
     )
 }
 
+## wrapper function across CI2measures with error handling
+calc_measures <- function(x, pars, i) {
+    # if error in function before, just return NA back.
+    # Otherwise, run sim2CIs. If an error happens, log everything and
+    # return NA
+    if (length(x) == 1L && is.na(x)) {
+        NA
+    } else {
+        tryCatch(
+            {
+                CI2measures(x = x, pars = pars)
+            },
+            error = function(cond) {
+                error_function(
+                    cond = cond,
+                    pars = pars,
+                    error_obj = x,
+                    fun_name = "calc_measures",
+                    i = i
+                )
+                NA
+            }
+        )
+    }
+}
+
+################################################################################
+#            Calculating the output measures for each individual CI            #
+################################################################################
+
+# Calculate the mean measure for each of the method and measure subgroups
+get_mean_stats <- function(df) {
+    mean_stats <- stats::aggregate(
+        value ~ measure + method,
+        FUN = mean,
+        data = df
+    )
+    mean_stats$usage <- "mean_plot"
+    mean_stats$stat_fun <- "mean"
+    mean_stats
+}
+
+# Calculate the summary measures for gamma_min
+get_gamma_stats <- function(df) {
+    # Run all the functions of f_list_gamma
+    # To the correct subset of df and add
+    # some information regarding stat and
+    # usage
+    df_sub <- subset(df, measure == "gamma_min")
+    f_list_gamma <- list(
+        min = min,
+        firstQuart = function(x) {
+            quantile(x, probs = 0.25, names = FALSE)
+        },
+        median = median,
+        mean = mean,
+        thirdQuart = function(x) {
+            quantile(x, probs = 0.75, names = FALSE)
+        },
+        max = max
+    )
+    gamma_stats <- lapply(
+        seq_along(f_list_gamma),
+        function(i) {
+            res <- stats::aggregate(
+                value ~ method + measure,
+                FUN = f_list_gamma[[i]],
+                data = df_sub
+            )
+            res$usage <- "gamma_min_plot"
+            res$stat_fun <- names(f_list_gamma)[i]
+            res
+        }
+    )
+    gamma_stats <- do.call("rbind", gamma_stats)
+    gamma_stats
+}
+
+# Calculate the summary measures for n
+make_f_n <- function(n) {
+    # This function generates a list of functions
+    # that check how many times the number of
+    # intervals is equal to n. Here, n is vectorised
+    # and there is also a function that counts the number
+    # of times where the number of intervals exceeds
+    # max(n).
+    maxn <- max(n)
+    f_n <- lapply(
+        n,
+        function(one_n) {
+            # force(one_n)
+            function(x) sum(x == one_n)
+        }
+    )
+    f_n <- append(f_n, list(function(x) sum(x > maxn)))
+    names(f_n) <- c(as.character(n), paste0("gt", max(n)))
+    f_n
+}
+
+get_n_stats <- function(df) {
+    f_list_n <- make_f_n(0:9)
+    df_sub <- subset(df, measure == "n")
+    n_stats <- lapply(
+        seq_along(f_list_n),
+        function(i) {
+            res <- stats::aggregate(
+                value ~ method + measure,
+                FUN = f_list_n[[i]],
+                data = df_sub
+            )
+            res$usage <- "n_plot"
+            res$stat_fun <- names(f_list_n)[i]
+            res
+        }
+    )
+    n_stats <- do.call("rbind", n_stats)
+    n_stats
+}
+
+# This is a wrapper function that calls all of the other
+# functions above.
+get_summary_measures <- function(df, pars) {
+    res <- rbind(
+        get_mean_stats(df = df),
+        get_gamma_stats(df = df),
+        get_n_stats(df = df)
+    )
+    p <- as.data.frame(lapply(pars, rep, times = nrow(res)))
+    cbind(p, res)
+}
+
+## Add another wrapper that handles possible errors
+calc_summary_measures <- function(df, pars, i) {
+    tryCatch({
+        get_summary_measures(df = df, pars = pars)
+    },
+    error = function(cond) {
+        error_function(
+            cond = cond,
+            pars = pars,
+            error_obj = df,
+            fun_name = "calc_summary_measures",
+            i = i
+        )
+        NA
+    })
+}
+
+################################################################################
+#                          Wrap everything in one function                     #
+################################################################################
 
 #' Simulate N times, compute CIs, assess CIs
 #'
@@ -1152,17 +1306,20 @@ sim <- function(
     types <- vapply(grid, typeof, character(1L), USE.NAMES = TRUE)
 
     # check grid columns
-    stopifnot(is.data.frame(grid),
-              c("sampleSize", "I2", "k", "dist",
-                "effect", "large", "heterogeneity", "bias") %in% names(grid),
-              types["sampleSize"] %in% c("double", "numeric", "integer"),
-              types["effect"] %in% c("double", "numeric", "integer"),
-              types["I2"] %in% c("double", "numeric", "integer"),
-              types["k"] %in% c("double", "numeric", "integer"),
-              types["heterogeneity"] %in% c("character"),
-              types["dist"] %in% c("character"),
-              types["bias"] %in% c("character"),
-              types["large"] %in% c("double", "numeric", "integer")
+    stopifnot(
+        is.data.frame(grid),
+        c(
+            "sampleSize", "I2", "k", "dist",
+            "effect", "large", "heterogeneity", "bias"
+        ) %in% names(grid),
+        types["sampleSize"] %in% c("double", "numeric", "integer"),
+        types["effect"] %in% c("double", "numeric", "integer"),
+        types["I2"] %in% c("double", "numeric", "integer"),
+        types["k"] %in% c("double", "numeric", "integer"),
+        types["heterogeneity"] %in% c("character"),
+        types["dist"] %in% c("character"),
+        types["bias"] %in% c("character"),
+        types["large"] %in% c("double", "numeric", "integer")
     )
 
     # check grid
@@ -1197,35 +1354,26 @@ sim <- function(
         .errorhandling = "pass"
     ) %dorng% {
 
+        # Since we run this in parallel, we have no other means to check
+        # whether an error occured than to check for the existence of the
+        # file that is written by the error_function. If it exists, an
+        # error happened and we can skip the rest of the iterations.
         if (file.exists("error.txt")) {
             # if error happened, skip the rest of the loop iterations
             out <- "skipped"
         } else {
-
             cat("start", j, "of", nrow(grid), fill = TRUE)
             pars <- grid[j, ]
 
             # av is a list with elements that are either a tibble or NA
             # (the latter in case of an error)
-            av <- foreach::foreach(
-                    i = seq_len(N),
-                    .errorhandling = "pass"
-                ) %do% {
-
-                # If an error happened somewhere in the simulation
-                # return NA for all successive iterations
-                if (file.exists("error.txt")) return(NA)
-
+            av <- vector("list", length = N)
+            for (i in seq_len(N)) {
                 # Repeat this N times. Simulate studies, calculate CIs,
                 # calculate measures
                 res <- sim_effects(pars = pars, i = i)
                 CIs <- calc_ci(x = res, pars = pars, i = i)
-                out <- tryCatch({
-                    if (length(res) == 1L && is.na(CIs)) NA else CI2measures(x = CIs, pars = pars)
-                    },
-                    error = function(cond) error_function(cond = cond, pars = pars, error_obj = res, fun_name = "CI2measures")
-                )
-                out
+                av[[i]] <- calc_measures(x = CIs, pars = pars, i = i)
             }
 
             # summarize the N tibbles.
@@ -1233,118 +1381,28 @@ sim <- function(
             if (any(is.na(av))) {
                 out <- "failed"
             } else {
-                # rbind data frames in list "av"
-                av <- bind_rows(av)
-                # summarize simulations
-                out <- tryCatch({
-                    bind_rows(
-                        ## mean for all measures
-                        av %>%
-                            group_by(method) %>%
-                            summarize(
-                                across(
-                                    everything(),
-                                    .fns = list(mean = function(x) mean(x, na.rm = FALSE)),
-                                    .names = "{.col}_{.fn}"
-                                ),
-                                .groups = "drop"
-                            ) %>%
-                            pivot_longer(
-                                cols = !method,
-                                names_to = "measure",
-                                values_to = "value"
-                            ) %>%
-                            cbind(pars, .),
-
-                        ## summary statistics for gamma_min
-                        av %>%
-                            filter(
-                                grepl(
-                                    "Harmonic Mean.*CI|k-Trials.*CI|Pearson.*CI|Edgington.*CI|Fisher.*CI",
-                                    method
-                                )
-                            ) %>%
-                            group_by(method) %>%
-                            summarize(
-                                across(
-                                    "gammaMin",
-                                    .fns = list(
-                                        min = function(x) min(x, na.rm = FALSE),
-                                        firstQuart = function(x) quantile(x, probs = 0.25, na.rm = FALSE, names = FALSE),
-                                        median = function(x) median(x, na.rm = FALSE),
-                                        mean = function(x) mean(x, na.rm = FALSE),
-                                        thirdQuart = function(x) quantile(x, probs = 0.75, na.rm = FALSE, names = FALSE),
-                                        max = function(x) max(x, na.rm = FALSE)
-                                        ),
-                                    .names = "{.col}_{.fn}"
-                                ),
-                                .groups = "drop"
-                            ) %>%
-                            pivot_longer(
-                                cols = !method,
-                                names_to = "measure",
-                                values_to = "value"
-                            ) %>%
-                            cbind(pars, .),
-
-                        ## relative frequency for n
-                        av %>%
-                            filter(
-                                grepl(
-                                    "Harmonic Mean.*CI|k-Trials.*CI|Pearson.*CI|Edgington.*CI|Fisher.*CI",
-                                    method
-                                )
-                            ) %>%
-                            group_by(method) %>%
-                            summarize(
-                                across(
-                                    "n",
-                                    .fns = list(
-                                        "1" = function(x) sum(x == 1),
-                                        "2" = function(x) sum(x == 2),
-                                        "3" = function(x) sum(x == 3),
-                                        "4" = function(x) sum(x == 4),
-                                        "5" = function(x) sum(x == 5),
-                                        "6" = function(x) sum(x == 6),
-                                        "7" = function(x) sum(x == 7),
-                                        "8" = function(x) sum(x == 8),
-                                        "9" = function(x) sum(x == 9),
-                                        "gt9" = function(x) sum(x >= 10)
-                                    ),
-                                    .names = "{.col}_{.fn}"
-                                ),
-                                .groups = "drop"
-                            ) %>%
-                            pivot_longer(
-                                cols = !method,
-                                names_to = "measure",
-                                values_to = "value"
-                            ) %>%
-                            filter(!is.na(value)) %>%
-                            cbind(pars, .)
-                    )
-                },
-                error = function(cond) {
-                    error_function(
-                        cond = cond,
-                        pars = pars,
-                        error_obj = av,
-                        fun_name = "summarizing measures"
-                    )
-                }
-                )
+                # rbind data frames in list `av`
+                df <- do.call("rbind", av)
+                # calculate the summary measures
+                out <- calc_summary_measures(df = df, pars = pars, i = i)
             }
         }
+        # return output
         out
-
     }
+
+    # rbind lists together
+    o <- do.call("rbind", o)
+
+    # set some attributes and return
     attr(o, "seed") <- seed
     attr(o, "N") <- N
     o
 }
 
-
-
+################################################################################
+#            Calculating the output measures for each individual CI            #
+################################################################################
 
 ## set parameter grid to be evaluated
 grid <- expand.grid(
@@ -1368,10 +1426,11 @@ grid <- expand.grid(
 )
 
 ## run simulation, e.g., on the Rambo server of I-MATH
-tic()
-# out <- sim(grid = grid, N = 5e3, cores = 110)
-out <- sim(grid = grid[688:703, ], N = 30, cores = 15)
-toc()
+start <- Sys.time()
+out <- sim(grid = grid, N = 5e3, cores = 110)
+# out <- sim(grid = grid[688:703, ], N = 10, cores = 15)
+end <- Sys.time()
+print(end - start)
 
 ## save results
 dir.create("RData", showWarnings = FALSE)
