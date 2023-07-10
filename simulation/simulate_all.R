@@ -24,8 +24,9 @@
 ##                  assess CIs
 ##
 ## Florian Gerber, florian.gerber@uzh.ch, Oct. 14, 2021
+## Felix Hofmann, felix.hofmann2@uzh.ch, Sep. 14, 2022
 # rm(list = ls())
-remotes::install_github("felix-hof/hMean", ref = "dev")
+# remotes::install_github("felix-hof/hMean", ref = "dev")
 library(hMean)
 library(tidyverse)
 library(rlang)
@@ -814,6 +815,226 @@ calc_ci <- function(x, pars, i) {
 #                     Calculating the output measures                          #
 ################################################################################
 
+calc_coverage_effects <- function(cis, delta, ci_exists) {
+    # if ci does not exist
+    if (!ci_exists) {
+        0
+    } else {
+        mean(
+            vapply(
+                delta,
+                function(d) {
+                    any(cis[, "lower"] <= d & d <= cis[, "upper"])
+                },
+                logical(1L)
+            )
+        )
+    }
+}
+
+# calculate how many times at least one study-specific effect
+# is covered
+calc_coverage_effects_min1 <- function(cis, delta, ci_exists) {
+    if (!ci_exists) {
+        0
+    } else {
+        found <- FALSE
+        for (d in delta) {
+            if (any(cis[, "lower"] <= d & d <= cis[, "upper"])) {
+                found <- TRUE
+                break
+            }
+        }
+        as.numeric(found)
+    }
+}
+
+# calculate whether all deltas covered by CI
+calc_coverage_effects_all <- function(cis, delta, ci_exists) {
+    if (!ci_exists) {
+        0
+    } else {
+        as.numeric(
+            all(
+                vapply(
+                    delta,
+                    function(d) {
+                        any(
+                            cis[, "lower"] <= d &
+                            d <= cis[, "upper"]
+                        )
+                    },
+                    logical(1L)
+                )
+            )
+        )
+    }
+}
+
+# calculate whether interval covers future study
+# (only for hMean, hMean_additive, hMean_multiplicative)
+calc_coverage_prediction <- function(cis, pars, ci_exists) {
+    if (!ci_exists) {
+        0
+    } else {
+        new_study <- simREbias(
+            k = 1, sampleSize = pars$sampleSize,
+            effect = pars$effect, I2 = pars$I2,
+            heterogeneity = pars$heterogeneity, dist = pars$dist, large = 0,
+            bias = "none"
+        )[, "delta"]
+        as.numeric(
+            any(
+                cis[, "lower"] <= new_study & new_study <= cis[, "upper"]
+            )
+        )
+    }
+}
+
+# calculate the width
+calc_width <- function(cis, ci_exists) {
+    if (!ci_exists) {
+        0
+    } else {
+        sum(cis[, "upper"] - cis[, "lower"])
+    }
+}
+
+# calculate wether the ci covers the true effect
+calc_coverage_true <- function(cis, effect, ci_exists) {
+    if (!ci_exists) {
+        0
+    } else {
+        as.numeric(any(cis[, "lower"] <= effect & effect <= cis[, "upper"]))
+    }
+}
+
+# return gamma min
+calc_gamma_min <- function(gamma) {
+    if (all(is.na(gamma))) {
+        NA_real_
+    } else {
+        gamma[, "gamma_min"]
+    }
+}
+
+# return the score
+calc_score <- function(cis, effect, ci_exists) {
+    if (!ci_exists) {
+        NA_real_
+    } else {
+        abs_ci <- abs(cis)
+        calc_width(cis = cis, ci_exists = ci_exists) + (2 / 0.05) +
+        min(abs_ci[, "lower"], abs_ci[, "upper"]) *
+        1 - calc_coverage_true(cis, effect, ci_exists)
+    }
+}
+
+# returnt the number of CIs
+calc_n <- function(cis, ci_exists) {
+    if (!ci_exists) {
+        0
+    } else {
+        nrow(cis)
+    }
+}
+
+# based on the current method, what measures do we need to calculate
+get_measures <- function(is_ci, is_pi, is_new) {
+
+    # list all functions for measures
+    all_meas <- list(
+        coverage_true = quote({
+            calc_coverage_true(
+                cis = cis,
+                effect = effect,
+                ci_exists = ci_exists
+            )
+        }),
+        coverage_effects = quote({
+            calc_coverage_effects(
+                cis = cis,
+                delta = delta,
+                ci_exists = ci_exists
+            )
+        }),
+        coverage_effects_min1 = quote({
+            calc_coverage_effects_min1(
+                cis = cis,
+                delta = delta,
+                ci_exists = ci_exists
+            )
+        }),
+        coverage_effects_all = quote({
+            calc_coverage_effects_all(
+                cis = cis,
+                delta = delta,
+                ci_exists = ci_exists
+            )
+        }),
+        coverage_prediction = quote({
+            calc_coverage_prediction(
+                cis = cis,
+                pars = pars,
+                ci_exists = ci_exists
+            )
+        }),
+        width = quote({
+            calc_width(
+                cis = cis,
+                ci_exists = ci_exists
+            )
+        }),
+        gamma_min = quote({
+            calc_gamma_min(gamma = gamma)
+        }),
+        score = quote({
+            calc_score(
+                cis = cis,
+                effect = effect,
+                ci_exists = ci_exists
+            )
+        }),
+        n = quote({
+            calc_n(
+                cis = cis,
+                ci_exists = ci_exists
+            )
+        })
+    )
+
+    # Allocate memory for list
+    calc_meas <- vector("list", length = 3L)
+    counter <- 1L
+    if (is_ci) {
+        calc_meas[[counter]] <- c(
+            "coverage_true",
+            "coverage_effects",
+            "coverage_effects_min1",
+            "coverage_effects_all",
+            "width",
+            "score"
+        )
+        counter <- counter + 1L
+    }
+    if (is_pi) {
+        calc_meas[[counter]] <- c(
+            "coverage_prediction"
+        )
+        counter <- counter + 1L
+    }
+    if (is_new) {
+        calc_meas[[counter]] <- c(
+            "n",
+            "gamma_min"
+        )
+        # counter <- counter + 1L
+    }
+    calc_meas <- do.call("c", calc_meas)
+
+    # return a list with appropriate functions
+    all_meas[calc_meas]
+}
 
 #' Computes quality measures for CIs
 #'
@@ -837,249 +1058,66 @@ CI2measures <- function(x, pars) {
 
     ci_df <- x$CIs
     # get the method corresponding to each row of the CIs
-    row_method <- ci_df$method
-    # list all methods
-    all_methods_idx <- !duplicated(row_method)
-    all_methods <- row_method[all_methods_idx]
-    # Get some other variables in order to check what measure to calculate
-    is_ci <- ci_df$is_ci[all_methods_idx]
-    is_pi <- ci_df$is_pi[all_methods_idx]
-    is_new <- ci_df$is_new[all_methods_idx]
-    # convert CIs to matrix
-    cis <- as.matrix(x$CIs[c("lower", "upper")])
+    ci_method <- ci_df$method
+    # get the indices of unique methods and their names
+    unique_methods_idx <- !duplicated(ci_method)
+    unique_methods <- ci_method[unique_methods_idx]
+    # for each method, assess whether it is a CI, whether it is new,
+    # whether it is a PI
+    ci_exists <- ci_df$ci_exists[unique_methods_idx]
+    is_ci <- ci_df$is_ci[unique_methods_idx]
+    is_pi <- ci_df$is_pi[unique_methods_idx]
+    is_new <- ci_df$is_new[unique_methods_idx]
+    # convert the CIs to matrix
+    cis <- as.matrix(ci_df[c("lower", "upper")])
     # get gamma
-    gamma <- as.matrix(x$gamma[c("gamma_min", "x_gamma_min")])
     gamma_methods <- x$gamma$method
+    gamma <- as.matrix(x$gamma[c("gamma_min", "x_gamma_min")])
     # get the deltas
     delta <- x$delta
     # get the effect
     effect <- x$effect
 
-
-
-    get_measure_funs <- function(is_new, is_ci, is_pi) {
-        f <- list(
-            # calculate proportion of deltas covered by the interval
-            coverage_effects = function(cis, delta) {
-                mean(
-                    vapply(
-                        delta,
-                        function(d) {
-                            any(cis[, "lower"] <= d & d <= cis[, "upper"])
-                        },
-                        logical(1L)
-                    )
-                )
-            },
-            # calculate how many times at least one study-specific effect
-            # is covered
-            coverage_effects_min1 = function(cis, delta) {
-                found <- FALSE
-                for (d in delta) {
-                    if (any(cis[, "lower"] <= d & d <= cis[, "upper"])) {
-                        found <- TRUE
-                        break
-                    }
-                }
-                as.numeric(found)
-            },
-            # calculate whether all deltas covered by CI
-            coverage_effects_all = function(cis, delta) {
-                as.numeric(
-                    all(
-                        vapply(
-                            delta,
-                            function(d) {
-                                any(
-                                    cis[, "lower"] <= d &
-                                    d <= cis[, "upper"]
-                                )
-                            },
-                            logical(1L)
-                        )
-                    )
-                )
-            },
-            # calculate whether interval covers future study
-            # (only for hMean, hMean_additive, hMean_multiplicative)
-            coverage_prediction = function(cis) {
-                new_study <- simREbias(
-                    k = 1, sampleSize = pars$sampleSize,
-                    effect = pars$effect, I2 = pars$I2,
-                    heterogeneity = pars$heterogeneity, dist = pars$dist, large = 0,
-                    bias = "none"
-                )[, "delta"]
-                as.numeric(
-                    any(
-                        cis[, "lower"] <= new_study & new_study <= cis[, "upper"]
-                    )
-                )
-            },
-            # calculate the width
-            width = function(cis) {
-                sum(cis[, "upper"] - cis[, "lower"])
-            },
-            coverage_true = function(cis, effect) {
-                as.numeric(any(cis[, "lower"] <= effect & effect <= cis[, "upper"]))
-            },
-            gamma_min = function(gamma) {
-
-            }
-
-
+    out <- vector("list", length(unique_methods))
+    # loop over each of the methods
+    for (k in seq_along(unique_methods)) {
+        # Get the current method
+        curr_method <- unique_methods[k]
+        # create the argument list
+        arg_list <- list(
+            cis = cis[ci_method == curr_method, , drop = FALSE],
+            effect = effect,
+            ci_exists = ci_exists[k],
+            delta = delta,
+            pars = pars,
+            gamma = gamma[gamma_methods == curr_method, , drop = FALSE]
         )
-
-    }
-
-
-        width <- sum(x_sub[, "upper"] - x_sub[, "lower"])
-
-        # calculate whether interval covers true effect
-        coverage_true <- as.numeric(
-            any(x_sub[, "lower"] <= effect & effect <= x_sub[, "upper"])
+        # Get the unevaluated function calls for the current method
+        curr_meas <- get_measures(
+            is_ci = is_ci[k],
+            is_pi = is_pi[k],
+            is_new = is_new[k]
         )
-
-        # get gamma_min to later attach it to the function output
-        if (do_gamma) {
-            gamma_min <- gamma[gamma_idx, "gamma_min"]
-        } else {
-            gamma_min <- NA_real_
-        }
-
-        # Calculate score for CI methods
-        if (is_ci_method(meth)) {
-            score <- width +
-                (2 / 0.05) * min(abs(x_sub[, "lower"]), abs(x_sub[, "upper"])) *
-                (1 - coverage_true)
-        } else {
-            score <- NA_real_
-        }
-
-        # count number of intervals
-        if (is_new) {
-            n <- nrow(x_sub)
-        } else {
-            n <- NA_integer_
-        }
-
-    get_measures <- function(method, data) {
-    }
-
-
-    foreach::foreach(i = seq_along(all_methods), .combine = rbind) %do% {
-
-        # Current method
-        meth <- all_methods[i]
-        # Current CI index
-        meth_idx <- row_method == meth
-        # Subset by method
-        x_sub <- cis[meth_idx, , drop = FALSE]
-        # Subset gamma
-        if (is_new) {
-            gamma_idx <- gamma_methods == meth
-        }
-
-
-        # calculate proportion of deltas covered by the interval
-        coverage_effects <- mean(
-            vapply(
-                delta,
-                function(delta) {
-                    any(x_sub[, "lower"] <= delta & delta <= x_sub[, "upper"])
+        # Calculate the get_measures
+        out[[k]] <- data.frame(
+            value = vapply(
+                curr_meas,
+                function(expr) {
+                    eval(expr, envir = arg_list)
                 },
-                logical(1L)
-            )
+                numeric(1L)
+            ),
+            measure = names(curr_meas),
+            method = curr_method,
+            stringsAsFactors = FALSE,
+            row.names = NULL
         )
-
-        # calculate how many times at least one study-specific effect is covered
-        found <- FALSE
-        for (z in delta) {
-            if (any(x_sub[, "lower"] <= z & z <= x_sub[, "upper"])) {
-                found <- TRUE
-                break
-            }
-        }
-        coverage_effects_min1 <- as.numeric(found)
-
-        # calculate whether all deltas covered by CI
-        coverage_effects_all <- as.numeric(
-            all(
-                vapply(
-                    delta,
-                    function(delta) {
-                        any(
-                            x_sub[, "lower"] <= delta &
-                            delta <= x_sub[, "upper"]
-                        )
-                    },
-                    logical(1L)
-                )
-            )
-        )
-
-        # calculate whether interval covers future study
-        # (only for hMean, hMean_additive, hMean_multiplicative)
-        new_study <- simREbias(
-            k = 1, sampleSize = pars$sampleSize,
-            effect = pars$effect, I2 = pars$I2,
-            heterogeneity = pars$heterogeneity, dist = pars$dist, large = 0,
-            bias = "none"
-        )[, "delta"]
-
-        coverage_prediction <- as.numeric(
-            any(
-                x_sub[, "lower"] <= new_study & new_study <= x_sub[, "upper"]
-            )
-        )
-
-        # calculate total width of the interval(s)
-        width <- sum(x_sub[, "upper"] - x_sub[, "lower"])
-
-        # calculate whether interval covers true effect
-        coverage_true <- as.numeric(
-            any(x_sub[, "lower"] <= effect & effect <= x_sub[, "upper"])
-        )
-
-        # get gamma_min to later attach it to the function output
-        if (do_gamma) {
-            gamma_min <- gamma[gamma_idx, "gamma_min"]
-        } else {
-            gamma_min <- NA_real_
-        }
-
-        # Calculate score for CI methods
-        if (is_ci_method(meth)) {
-            score <- width +
-                (2 / 0.05) * min(abs(x_sub[, "lower"]), abs(x_sub[, "upper"])) *
-                (1 - coverage_true)
-        } else {
-            score <- NA_real_
-        }
-
-        # count number of intervals
-        if (is_new) {
-            n <- nrow(x_sub)
-        } else {
-            n <- NA_integer_
-        }
-
-        out <- tibble::tibble(
-            method = meth,
-            coverage_true = coverage_true,
-            coverage_effects = coverage_effects,
-            coverage_effects_min1 = coverage_effects_min1,
-            coverage_effects_all = coverage_effects_all,
-            coverage_prediction = coverage_prediction,
-            gammaMin = gamma_min,
-            gammaMin_include = is_new,
-            n = n,
-            n_include = is_new,
-            width = width,
-            score = score
-        )
-        # return
-        out
     }
+
+    do.call(
+        "rbind",
+        out
+    )
 }
 
 
