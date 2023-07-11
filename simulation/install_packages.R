@@ -2,6 +2,7 @@
 script_dir <- "."
 Rscripts <- paste0(script_dir, "/", list.files(script_dir))
 Rscripts <- Rscripts[grepl(".R$", Rscripts)]
+Rscripts <- Rscripts[!grepl("plot", Rscripts)] # remove plotting
 
 # extract packages used from all R scripts
 libraries <- lapply(Rscripts, function(x){
