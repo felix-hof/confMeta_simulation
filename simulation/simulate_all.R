@@ -264,7 +264,7 @@ get_classic_intervals <- function(methods, thetahat, se) {
     }
     # convert this to df
     # which methods to call
-    names <- meth2name[methods]
+    names <- methods
     out <- data.frame(
         lower = ci[, 1L],
         upper = ci[, 2L],
@@ -1155,10 +1155,12 @@ calc_measures <- function(x, pars, i) {
 
 # Calculate the mean measure for each of the method and measure subgroups
 get_mean_stats <- function(df) {
+    # Summarise all the measures except gamma_min
+    df_sub <- subset(df, measure != "gamma_min")
     mean_stats <- stats::aggregate(
-        value ~ measure + method,
+        value ~ measure + method + is_ci + is_pi + is_new,
         FUN = mean,
-        data = df
+        data = df_sub
     )
     mean_stats$usage <- "mean_plot"
     mean_stats$stat_fun <- "mean"
@@ -1188,7 +1190,7 @@ get_gamma_stats <- function(df) {
         seq_along(f_list_gamma),
         function(i) {
             res <- stats::aggregate(
-                value ~ method + measure,
+                value ~ measure + method + is_ci + is_pi + is_new,
                 FUN = f_list_gamma[[i]],
                 data = df_sub
             )
@@ -1229,7 +1231,7 @@ get_n_stats <- function(df) {
         seq_along(f_list_n),
         function(i) {
             res <- stats::aggregate(
-                value ~ method + measure,
+                value ~ method + measure + is_ci + is_pi + is_new,
                 FUN = f_list_n[[i]],
                 data = df_sub
             )
