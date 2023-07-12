@@ -56,46 +56,57 @@ make_title <- function(df) {
     return(eval(parse(text = args)))
 }
 
+# improv for now (TODO: Handle this in sim already)
+convert_names <- function(id_strings) {
+    st <- strsplit(id_strings, split = "_")
+    get_names <- function(str) {
+        l <- length(str)
+        if (l == 1L) {
+            str
+        } else {
+            meth <- c(
+                "hMean" = "Harmonic Mean",
+                "ktrials" = "k-Trials",
+                "pearson" = "Pearson",
+                "fisher" = "Fisher",
+                "edgington" = "Edgington"
+            )
+            het <- c(
+                "none" = "",
+                "additive" = "Additive",
+                "multiplicative" = "Multiplicative"
+            )
+            m <- meth[str[1L]]
+            h <- het[str[l]]
+            out <- if (h == "") paste(m, "CI") else paste(m, h, "CI")
+            if (l == 3L) out <- paste0(out, " (", str[2L], ")")
+            out
+        }
+    }
+    vapply(st, get_names, character(1L))
+}
+
 # Load data ----
 load(paste0("RData/simulate_all.RData"))
+# improv for now (TODO: once this is handled in sim, delete it here)
+out <- out |>
+    mutate(method = convert_names(method))
 
 # Prepare data (meanplots) ----
 out_meanplots <- out %>%
-    bind_rows() %>%
-    filter(
-        grepl("_mean$", measure),
-        !grepl("^gammaMin", measure),
-        !grepl("two sided", method),
-        !grepl("\\(f\\)", method)
-    ) %>%
-    mutate(
-        method = ifelse(
-            grepl("REML", method),
-            gsub("REML", "Random Effects, REML", method),
-            method
-        ),
-        measure = gsub("_mean$", "", measure)
-    )
+    filter(usage == "mean_plot", measure != "gamma_min")
 
 # Prepare data (gammaMin) ----
 out_gammamin <- out %>%
-    bind_rows() %>%
-    filter(
-        grepl("^gammaMin", measure),
-        grepl("Harmonic Mean|k-Trials|Pearson", method),
-        !grepl("two sided", method),
-        !grepl("\\(f\\)", method)
-    ) %>%
-    distinct() %>% # throw out the doubly included gammaMin_mean entries
+    filter(usage == "gamma_min_plot") %>%
     mutate(
-        measure = gsub("^gammaMin_", "", measure),
         measure = case_when(
-            measure == "min" ~ "Minimum",
-            measure == "firstQuart" ~ "1. Quartile",
-            measure == "mean" ~ "Mean",
-            measure == "median" ~ "Median",
-            measure == "thirdQuart" ~ "3. Quartile",
-            measure == "max" ~ "Maximum"
+            stat_fun == "min" ~ "Minimum",
+            stat_fun == "firstQuart" ~ "1. Quartile",
+            stat_fun == "mean" ~ "Mean",
+            stat_fun == "median" ~ "Median",
+            stat_fun == "thirdQuart" ~ "3. Quartile",
+            stat_fun == "max" ~ "Maximum"
         ),
         measure = ordered(
             measure,
@@ -110,28 +121,16 @@ out_gammamin <- out %>%
 
 # Prepare data (frequency) ----
 out_n <- out %>%
-    bind_rows() %>%
-    filter(
-        grepl("^n", measure),
-        !grepl("_mean$", measure),
-        !grepl("\\(f\\)", method)
-    ) %>%
+    filter(usage == "n_plot") %>%
     mutate(
-        measure = gsub("n_", "", measure),
-        measure = gsub("gt", "> ", measure),
-        measure = ordered(measure, levels = rev(c("> 9", as.character(9:1)))),
-        value = value / 5000
+        measure = gsub("gt", "> ", stat_fun),
+        measure = ordered(measure, levels = rev(c("> 9", as.character(9:0)))),
+        value = value / attributes(out)$N
     )
 
 # Prepare data (summary) ----
 out_sum <- out_meanplots %>%
-    filter(grepl("coverage", measure),
-           grepl(
-               # "Harmonic Mean|k-Trials|Hartung|Henmy|REML",
-               "Harmonic Mean|k-Trials|Pearson|Hartung|REML",
-               method
-           ),
-           !grepl("\\(f\\)", method))
+    filter(grepl("coverage", measure))
 
 # Set output directory -----
 out_dir <- "~/test/Institution/harmonic_mean"
@@ -141,77 +140,79 @@ out_dir <- "~/test/Institution/harmonic_mean"
 #' #' @param measure CI measure to plot
 #' #' @param by make facets based on "method" or "I2".
 plotPanels <- function(
-        data,
-        measure = c(
-            "coverage_true", "coverage_effects", "coverage_effects_all",
-            "coverage_effects_min1", "coverage_prediction", "n",
-            "width", "score"
-        ),
-        by = c("method", "I2")
-    ) {
+    data,
+    measure = c(
+        "coverage_true", "coverage_effects", "coverage_effects_all",
+        "coverage_effects_min1", "coverage_prediction", "n",
+        "width", "score"
+    ),
+    by = c("method", "I2")
+) {
+
     measure <- match.arg(measure)
     by <- match.arg(by)
-    data2 <- data[data$measure == measure, ] %>%
+    data <- data %>%
         mutate(
             k = factor(k),
             I2 = factor(I2)
         )
-    if (measure == "n") {
-        data2 <- data2[grepl("Harmonic Mean|k-Trials|Pearson", data$method), ]
-    }
     if (by == "method") {
-        p <- data2 %>%
+        p <- data %>%
             # Set order of plots
             {
                 if (measure == "coverage_prediction") {
+                    order <- c(
+                        "Harmonic Mean CI (chisq)",
+                        "Harmonic Mean Additive CI (chisq)",
+                        "Harmonic Mean Multiplicative CI (chisq)",
+                        "Hartung & Knapp PI",
+                        # "Harmonic Mean CI (f)",
+                        # "Harmonic Mean Additive CI (f)",
+                        # "Harmonic Mean Multiplicative CI (f)",
+                        # "k-Trials CI",
+                        # "k-Trials Additive CI",
+                        # "k-Trials Multiplicative CI",
+                        # "Pearson CI",
+                        # "Pearson Additive CI",
+                        # "Pearson Multiplicative CI",
+                        "Edgington CI",
+                        "Edgington Additive CI",
+                        "Edgington Multiplicative CI",
+                        "REML PI",
+                        "Fisher CI",
+                        "Fisher Additive CI",
+                        "Fisher Multiplicative CI"
+                    )
                     .[] %>%
-                        filter(grepl("Harmonic Mean|k-Trials|Pearson|PI", method)) %>%
-                        mutate(
-                            method = factor(
-                                method,
-                                levels = c(
-                                    "Harmonic Mean CI (chisq)",
-                                    "Harmonic Mean Additive CI (chisq)",
-                                    "Harmonic Mean Multiplicative CI (chisq)",
-                                    "Hartung & Knapp PI",
-                                    # "Harmonic Mean CI (f)",
-                                    # "Harmonic Mean Additive CI (f)",
-                                    # "Harmonic Mean Multiplicative CI (f)",
-                                    "k-Trials CI",
-                                    "k-Trials Additive CI",
-                                    "k-Trials Multiplicative CI",
-                                    "Random Effects, REML PI",
-                                    "Pearson CI",
-                                    "Pearson Additive CI",
-                                    "Pearson Multiplicative CI"
-                                )
-                            )
-                        )
+                        filter(method %in% order) %>%
+                        mutate(method = factor(method, levels = order))
                 } else {
+                    order <- c(
+                        "Harmonic Mean CI (chisq)",
+                        "Harmonic Mean Additive CI (chisq)",
+                        "Harmonic Mean Multiplicative CI (chisq)",
+                        "Hartung & Knapp CI",
+                        # "Harmonic Mean CI (f)",
+                        # "Harmonic Mean Additive CI (f)",
+                        # "Harmonic Mean Multiplicative CI (f)",
+                        # "k-Trials CI",
+                        # "k-Trials Additive CI",
+                        # "k-Trials Multiplicative CI",
+                        # "Pearson CI",
+                        # "Pearson Additive CI",
+                        # "Pearson Multiplicative CI",
+                        "Edgington CI",
+                        "Edgington Additive CI",
+                        "Edgington Multiplicative CI",
+                        "Henmi & Copas CI",
+                        "Fisher CI",
+                        "Fisher Additive CI",
+                        "Fisher Multiplicative CI",
+                        "REML CI"
+                    )
                     .[] %>%
-                        filter(!grepl("PI", method)) %>%
-                        mutate(
-                            method = factor(
-                                method,
-                                levels = c(
-                                    "Harmonic Mean CI (chisq)",
-                                    "Harmonic Mean Additive CI (chisq)",
-                                    "Harmonic Mean Multiplicative CI (chisq)",
-                                    "Hartung & Knapp CI",
-                                    # "Harmonic Mean CI (f)",
-                                    # "Harmonic Mean Additive CI (f)",
-                                    # "Harmonic Mean Multiplicative CI (f)",
-                                    "k-Trials CI",
-                                    "k-Trials Additive CI",
-                                    "k-Trials Multiplicative CI",
-                                    "Henmy & Copas CI",
-                                    "Pearson CI",
-                                    "Pearson Additive CI",
-                                    "Pearson Multiplicative CI",
-                                    "Random Effects, REML CI"
-                                )
-                            )
-                        )
+                        filter(method %in% order) %>%
+                        mutate(method = factor(method, levels = order))
                 }
             } %>%
             ggplot(mapping = aes(x = k, y = value, color = I2)) +
@@ -223,8 +224,9 @@ plotPanels <- function(
             ylab(measure)
     }
     if (by == "I2") {
-        p <- data2 %>% mutate(I2 = as.character(I2)) %>%
-        ggplot(mapping = aes(x = k, y = value, color = method)) +
+        p <- data %>%
+            mutate(I2 = as.character(I2)) %>%
+            ggplot(mapping = aes(x = k, y = value, color = method)) +
             facet_wrap(~ I2, labeller = label_bquote(I^2 == .(I2))) +
             geom_point() +
             stat_summary(fun = "mean", geom = "line", aes(group = method)) +
@@ -239,22 +241,7 @@ plotPanels <- function(
     p
 }
 
-# filter_data <- function(measure, plot_type){
-#     filter_data_meanplots <- function(measure) {
-#         
-#     }
-#     filter_data_gamma <- function(measure) {
-#         
-#     }
-#     filter_data_frequency <- function(measure) {
-#         
-#     }
-#     filter_data_summary <- function(measure) {
-#         
-#     }
-# }
-
-## Mean plots ---------------------------------------------------------------------
+## Mean plots ------------------------------------------------------------------
 
 
 
@@ -278,6 +265,7 @@ for (x in list_seq) { # loop over summary (eg. dist)
     current <- names(opts)[x]
     current_levels <- opts[[current]]
     cat(
+        "\n",
         "Currently constructing plots for:",
         current,
         paste0("(", paste0(current_levels, collapse = ", "), ")"),
@@ -298,48 +286,32 @@ for (x in list_seq) { # loop over summary (eg. dist)
         })
         img_data <- out_meanplots %>% filter(!!!filters)
         for (me in measure_opts) { # loop over different measures
-            img_data %>%
-                filter(measure == me) %>%
-                {
-                    if (me == "coverage_prediction") {
-                        ylim <- .[] %>%
-                            filter(
-                                grepl("Harmonic Mean|PI|k-Trials", method)
-                            ) %>%
-                            pull(value) %>%
-                            {
-                                c(min(.), max(.))
-                            }
-                    } else {
-                        ylim <- .[] %>%
-                            filter(!grepl("PI", method)) %>%
-                            pull(value) %>%
-                            {
-                                c(min(.), max(.))
-                            }
-                    }
-                    lapply(current_levels, function(z) {
-                        title <- .[] %>%
-                            select(
-                                -k, -I2, -method, -measure,
-                                -value, -all_of(current),
-                                -sampleSize
-                            ) %>%
-                            distinct() %>%
-                            bind_cols(!!current := z) %>%
-                            select(order(colnames(.))) %>%
-                            make_title()
-                        .[] %>%
-                            filter(!!sym(current) == z) %>%
-                            plotPanels(measure = me, by = "method") +
-                            ylim(ylim) +
-                            ggtitle(eval(title)) +
-                            theme(
-                                text = element_text(size = 9),
-                                plot.title = element_text(size = 10)
-                            )
-                    })
-                } %>%
+            img_data_me <- img_data %>% filter(measure == me)
+            ylim <- with(img_data_me, c(min(value), max(value)))
+            lapply(
+                current_levels,
+                function(z) {
+                    title <- img_data_me %>%
+                        select(
+                            -k, -I2, -method, -measure,
+                            -value, -all_of(current),
+                            -sampleSize, -usage, -stat_fun
+                        ) %>%
+                        distinct() %>%
+                        bind_cols(!!current := z) %>%
+                        select(order(colnames(.))) %>%
+                        make_title()
+                    img_data_me %>%
+                        filter(!!sym(current) == z) %>%
+                        plotPanels(measure = me, by = "method") +
+                        ylim(ylim) +
+                        ggtitle(eval(title)) +
+                        theme(
+                            text = element_text(size = 9),
+                            plot.title = element_text(size = 10)
+                        )
+                }
+            ) %>%
                 wrap_plots(guides = "collect") &
                 theme(legend.position = "bottom")
             filename <- paste0(
@@ -371,15 +343,42 @@ out_path <- file.path(out_dir, "figs/min_pH")
 dir.create(out_path, showWarnings = FALSE, recursive = TRUE)
 
 opts <- list(
-    dist = out_gammamin %>% pull(dist) %>% unique(),
-    bias = out_gammamin %>% pull(bias) %>% unique(),
-    large = out_gammamin %>% pull(large) %>% unique(),
-    heterogeneity = out_gammamin %>% pull(heterogeneity) %>% unique(),
-    I2 = out_gammamin %>% pull(I2) %>% unique()
+    dist = unique(out_gammamin$dist),
+    bias = unique(out_gammamin$bias),
+    large = unique(out_gammamin$large),
+    heterogeneity =  unique(out_gammamin$heterogeneity),
+    I2 =  unique(out_gammamin$I2)
 )
-measure_opts <- out_gammamin %>% pull(measure) %>% unique()
+measure_opts <- unique(out_gammamin$measure)
 
 list_seq <- seq_along(opts)
+
+# Set order of the plots
+ord <- c(
+    "Harmonic Mean CI (chisq)",
+    "Harmonic Mean Additive CI (chisq)",
+    "Harmonic Mean Multiplicative CI (chisq)",
+    #"Harmonic Mean CI (f)",
+    #"Harmonic Mean Additive CI (f)",
+    #"Harmonic Mean Multiplicative CI (f)",
+    # "k-Trials CI",
+    # "k-Trials Additive CI",
+    # "k-Trials Multiplicative CI",
+    # "Pearson CI",
+    # "Pearson Additive CI",
+    # "Pearson Multiplicative CI",
+    "Edgington CI",
+    "Edgington Additive CI",
+    "Edgington Multiplicative CI",
+    "Fisher CI",
+    "Fisher Additive CI",
+    "Fisher Multiplicative CI"
+)
+
+## For now, subset to only those methods we actually want plots of
+out_gammamin <- subset(out_gammamin, method %in% ord)
+
+
 
 for (x in list_seq) { # loop over summary (eg. dist)
     current <- names(opts)[x]
@@ -405,33 +404,15 @@ for (x in list_seq) { # loop over summary (eg. dist)
         })
         img_data <- out_gammamin %>%
             filter(!!!filters) %>%
-            mutate(
-                method = factor(
-                    method,
-                    levels = c(
-                        "Harmonic Mean CI (chisq)",
-                        "Harmonic Mean Additive CI (chisq)",
-                        "Harmonic Mean Multiplicative CI (chisq)",
-                        #"Harmonic Mean CI (f)",
-                        #"Harmonic Mean Additive CI (f)",
-                        #"Harmonic Mean Multiplicative CI (f)",
-                        "k-Trials CI",
-                        "k-Trials Additive CI",
-                        "k-Trials Multiplicative CI",
-                        "Pearson CI",
-                        "Pearson Additive CI",
-                        "Pearson Multiplicative CI"
-                    )
-                )
-            )
+            mutate(method = factor(method, levels = ord))
         lapply(current_levels, function(z) {
             title <- img_data %>%
                 filter(!!sym(current) == z) %>%
                 select(
                     -k, -method, -measure,
                     -value, -all_of(current),
-                    -sampleSize
-                    ) %>%
+                    -sampleSize, -usage, -stat_fun
+                ) %>%
                 distinct() %>%
                 bind_cols(!!current := z) %>%
                 select(order(colnames(.))) %>%
@@ -516,17 +497,46 @@ make_title <- function(df) {
     return(eval(parse(text = args)))
 }
 
+# These are the options (i.e. what variables to compare and their levels)
 opts <- list(
-    dist = out_n %>% pull(dist) %>% unique(),
-    bias = out_n %>% pull(bias) %>% unique(),
-    large = out_n %>% pull(large) %>% unique(),
-    heterogeneity = out_n %>% pull(heterogeneity) %>% unique(),
-    I2 = out_n %>% pull(I2) %>% unique(),
-    k = out_n %>% pull(k) %>% unique()
+    dist = unique(out_n$dist),
+    bias = unique(out_n$bias),
+    large = unique(out_n$large),
+    heterogeneity = unique(out_n$heterogeneity),
+    I2 = unique(out_n$I2),
+    k = unique(out_n$k)
 )
-measure_opts <- out_n %>% pull(measure) %>% unique()
+
+# What measures do we have here (this ix the x axis)
+measure_opts <- unique(out_n$measure)
 
 list_seq <- seq_along(opts)
+
+# Set order of the plots
+ord <- c(
+    "Harmonic Mean CI (chisq)",
+    "Harmonic Mean Additive CI (chisq)",
+    "Harmonic Mean Multiplicative CI (chisq)",
+    #"Harmonic Mean CI (f)",
+    #"Harmonic Mean Additive CI (f)",
+    #"Harmonic Mean Multiplicative CI (f)",
+    # "k-Trials CI",
+    # "k-Trials Additive CI",
+    # "k-Trials Multiplicative CI",
+    # "Pearson CI",
+    # "Pearson Additive CI",
+    # "Pearson Multiplicative CI",
+    "Edgington CI",
+    "Edgington Additive CI",
+    "Edgington Multiplicative CI",
+    "Fisher CI",
+    "Fisher Additive CI",
+    "Fisher Multiplicative CI"
+)
+
+## For now, subset to only those methods we actually want plots of
+out_n <- subset(out_n, method %in% ord)
+
 
 # loop over summary (eg. dist)
 for (x in list_seq) {
@@ -554,30 +564,15 @@ for (x in list_seq) {
         img_data <- out_n %>%
             filter(!!!filters) %>%
             mutate(
-                method = factor(
-                    method,
-                    levels = c(
-                        "Harmonic Mean CI (chisq)",
-                        "Harmonic Mean Additive CI (chisq)",
-                        "Harmonic Mean Multiplicative CI (chisq)",
-                        #"Harmonic Mean CI (f)",
-                        #"Harmonic Mean Additive CI (f)",
-                        #"Harmonic Mean Multiplicative CI (f)",
-                        "k-Trials CI",
-                        "k-Trials Additive CI",
-                        "k-Trials Multiplicative CI",
-                        "Pearson CI",
-                        "Pearson Additive CI",
-                        "Pearson Multiplicative CI"
-                    )
-                )
+                method = factor(method, levels = ord)
             )
         lapply(current_levels, function(z) {
             title <- img_data %>%
                 filter(!!sym(current) == z) %>%
                 select(
                     -method, -measure, -value,
-                    -all_of(current), -sampleSize
+                    -all_of(current), -sampleSize,
+                    -usage, -stat_fun
                 ) %>%
                 distinct() %>%
                 bind_cols(!!current := z) %>%
@@ -621,12 +616,46 @@ for (x in list_seq) {
 
 # Summary of meanplots ---------------------------------------------------------
 
+# Make directories
 out_path <- file.path(out_dir, "figs/summary/")
 dir.create(out_path, showWarnings = FALSE, recursive = TRUE)
 
-opts <- list(bias = out_sum %>% pull(bias) %>% unique(),
-             meth = out_sum %>% pull(method) %>% unique(),
-             meas = out_sum %>% pull(measure) %>% unique())
+# Set types of plots
+opts <- list(
+    bias = unique(out_sum$bias),
+    meth = unique(out_sum$method),
+    meas = unique(out_sum$measure)
+)
+
+# Set the order of plots
+method_order <- c(
+    # "Harmonic Mean CI (chisq)",
+    "Harmonic Mean Additive CI (chisq)",
+    "Harmonic Mean Multiplicative CI (chisq)",
+    # "Harmonic Mean CI (f)",
+    # "Harmonic Mean Additive CI (f)",
+    # "Harmonic Mean Multiplicative CI (f)",
+    # "k-Trials CI",
+    # "k-Trials Additive CI",
+    # "k-Trials Multiplicative CI",
+    # "Pearson CI",
+    # "Pearson Additive CI",
+    # "Pearson Multiplicative CI",
+    # "Edgington CI",
+    "Edgington Additive CI",
+    "Edgington Multiplicative CI",
+    # "Fisher CI",
+    "Fisher Additive CI",
+    "Fisher Multiplicative CI",
+    "REML CI",
+    "REML PI",
+    "Hartung & Knapp CI",
+    "Hartung & Knapp PI"
+    # "Henmi & Copas CI"
+)
+unique(out_sum$method)
+
+out_sum <- subset(out_sum, method %in% method_order)
 
 totitle <- function(string) {
     stopifnot(
@@ -646,20 +675,6 @@ totitle <- function(string) {
 for (x in opts$meas) {
     data <- out_sum %>%
         filter(measure == x) %>%
-        {
-            if (x == "coverage_prediction") {
-                .[] %>%
-                    filter(
-                        grepl(
-                            "(^Harmonic Mean .+ CI .+|^.+PI$|^k-Trials|^Pearson.*)",
-                            method
-                        )
-                    )
-            } else {
-                .[] %>%
-                    filter(!grepl("^.+PI$", method))
-            }
-        } %>%
         group_by(k, bias, I2, method) %>%
         summarise(
             mean_value = mean(value),
@@ -668,15 +683,12 @@ for (x in opts$meas) {
             .groups = "drop"
         )
     # split methods into additive, multiplicative, and rest
-    methods <- data %>% pull(method) %>% unique()
-    additive <- grep("Additive", methods, value = TRUE)
-    multiplicative <- grep("Multiplicative", methods, value = TRUE)
-    rest <- grep(
-        "^((?!Harmonic|k-Trials|Pearson).)*$",
-        methods,
-        value = TRUE,
-        perl = TRUE
-    )
+    methods <- unique(data$method)
+    add_idx <- grepl("Additive", methods, fixed = TRUE)
+    mult_idx <- grepl("Multiplicative", methods, fixed = TRUE)
+    additive <- methods[add_idx]
+    multiplicative <- methods[mult_idx]
+    rest <- methods[!(add_idx | mult_idx)]
     # list of methods for each plot
     method_list <- list(
         additive = c(additive, rest),
@@ -692,25 +704,6 @@ for (x in opts$meas) {
         # get methods to loop over
         methods <- unique(out$method)
         # order them
-        method_order <- c(
-            "Harmonic Mean CI (chisq)",
-            "Harmonic Mean Additive CI (chisq)",
-            "Harmonic Mean Multiplicative CI (chisq)",
-            # "Harmonic Mean CI (f)",
-            # "Harmonic Mean Additive CI (f)",
-            # "Harmonic Mean Multiplicative CI (f)",
-            "k-Trials CI",
-            "k-Trials Additive CI",
-            "k-Trials Multiplicative CI",
-            "Pearson CI",
-            "Pearson Additive CI",
-            "Pearson Multiplicative CI",
-            "Random Effects, REML CI",
-            "Random Effects, REML PI",
-            "Hartung & Knapp CI",
-            "Hartung & Knapp PI",
-            "Henmy & Copas CI"
-        )
         methods <- method_order[method_order %in% methods]
         # make plots
         plots <- lapply(seq_along(methods), function(z) {
