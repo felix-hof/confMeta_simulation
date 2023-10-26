@@ -421,16 +421,15 @@ get_new_ci_gamma <- function(thetahat, se, p_funcs, arguments) {
         f <- p_funcs[[p_funcs_idx[k]]]
         formals(f) <- modifyList(formals(f), arguments[[p_arguments_idx[k]]])
         # compute CI
-        res <- confMeta::confMeta(
+        res <- confMeta:::get_ci(
             estimates = thetahat,
             SEs = se,
             conf_level = 0.95,
-            fun = f,
-            fun_name = nms[k]
+            p_fun = f
         )
         # CI related stuff
-        ci[[k]] <- res$joint_cis
-        ci_row[k] <- nrow(res$joint_cis)
+        ci[[k]] <- res$CI
+        ci_row[k] <- nrow(res$CI)
         # gamma related stuff
         gamma[k, ] <- get_gamma_x_y(res$gamma)
     }
@@ -1482,7 +1481,7 @@ grid <- expand.grid(
 
 ## run simulation, e.g., on the Rambo server of I-MATH
 start <- Sys.time()
-out <- sim(grid = grid, N = 5e3, cores = 55)
+out <- sim(grid = grid, N = 5e3, cores = 120)
 # out <- sim(grid = grid[688:703, ], N = 10, cores = 15)
 end <- Sys.time()
 print(end - start)
