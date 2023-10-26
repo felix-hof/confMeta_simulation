@@ -26,8 +26,8 @@
 ## Florian Gerber, florian.gerber@uzh.ch, Oct. 14, 2021
 ## Felix Hofmann, felix.hofmann2@uzh.ch, Oct. 26, 2021
 # rm(list = ls())
-remotes::install_github("felix-hof/hMean", ref = "dev")
-library(hMean)
+remotes::install_github("felix-hof/confMeta")
+library(confMeta)
 library(doParallel)
 library(doRNG)
 library(RhpcBLASctl)
@@ -128,14 +128,55 @@ error_function <- function(cond, pars, error_obj = NULL, fun_name, i) {
 ## when constructing expressions of the form `do.call("hMeanChiSqMu", args)`.
 ## These functions are used in:
 ## - sim2CIs
-hMeanChiSqMu_f <- function(...) {
-    hMean::hMeanChiSqMu(distr = "f", ...)
+hMeanChiSqMu_f <- function(
+    estimates,
+    SEs,
+    mu = 0,
+    phi = NULL,
+    tau2 = NULL,
+    heterogeneity = "none",
+    alternative = "none",
+    check_inputs = TRUE,
+    w = rep(1, length(estimates))
+) {
+    confMeta::p_hmean(
+        estimates = estimates,
+        SEs = SEs,
+        mu = mu,
+        phi = phi,
+        tau2 = tau2,
+        heterogeneity = heterogeneity,
+        alternative = alternative,
+        check_inputs = check_inputs,
+        w = w,
+        distr = "f"
+    )
 }
 
-hMeanChiSqMu_chisq <- function(...) {
-    hMeanChiSqMu(distr = "chisq", ...)
+hMeanChiSqMu_chisq <- function(
+    estimates,
+    SEs,
+    mu = 0,
+    phi = NULL,
+    tau2 = NULL,
+    heterogeneity = "none",
+    alternative = "none",
+    check_inputs = TRUE,
+    w = rep(1, length(estimates))
+) {
+    confMeta::p_hmean(
+        estimates = estimates,
+        SEs = SEs,
+        mu = mu,
+        phi = phi,
+        tau2 = tau2,
+        heterogeneity = heterogeneity,
+        alternative = alternative,
+        check_inputs = check_inputs,
+        w = w,
+        distr = "chisq"
+    )
 }
-
 
 ## The following functions are used to fit a model to some individual studies
 ## and then extract the estimate and CIs. The idea is to make a function of the
@@ -297,10 +338,10 @@ get_p_value_functions <- function(methods) {
     p_val_fcts <- list(
         hMean_f = hMeanChiSqMu_f,
         hMean_chisq = hMeanChiSqMu_chisq,
-        ktrials = hMean::kTRMu,
-        pearson = hMean::pPearsonMu,
-        edgington = hMean::pEdgingtonMu,
-        fisher = hMean::pFisherMu
+        ktrials = confMeta::p_ktrials,
+        pearson = confMeta::p_pearson,
+        edgington = confMeta::p_edgington,
+        fisher = confMeta::p_fisher
     )
     p_val_fcts[methods]
 }
@@ -376,17 +417,20 @@ get_new_ci_gamma <- function(thetahat, se, p_funcs, arguments) {
 
     # compute CIs
     for (k in seq_len(l)) {
+        # make the function for current config
+        f <- p_funcs[[p_funcs_idx[k]]]
+        formals(f) <- modifyList(formals(f), arguments[[p_arguments_idx[k]]])
         # compute CI
-        res <- hMean::hMeanChiSqCI(
-            thetahat = thetahat,
-            se = se,
-            alternative = "none",
-            pValueFUN = p_funcs[[p_funcs_idx[k]]],
-            pValueFUN_args = arguments[[p_arguments_idx[k]]]
+        res <- confMeta::confMeta(
+            estimates = thetahat,
+            SEs = se,
+            conf_level = 0.95,
+            fun = f,
+            fun_name = nms[k]
         )
         # CI related stuff
-        ci[[k]] <- res$CI
-        ci_row[k] <- nrow(res$CI)
+        ci[[k]] <- res$joint_cis
+        ci_row[k] <- nrow(res$joint_cis)
         # gamma related stuff
         gamma[k, ] <- get_gamma_x_y(res$gamma)
     }
@@ -744,12 +788,17 @@ sim2CIs <- function(x) {
         se = se
     )
 
+    # TODO: add further methods for phi/tau2 estimation -> loop over them
+    # and return the same data frame
+
     # For the new methods, we need phi and tau2 to estimate heterogeneity
     # we estimate phi ourselves and for tau2 we check whether it has already
     # been computed. If not, estimate it ourselves
-    phi <- hMean::estimatePhi(thetahat = thetahat, se = se)
+    phi <- confMeta::estimate_phi(estimates = thetahat, SEs = se)
     tau2 <- attributes(classic_methods)$tau2
-    if (is.null(tau2)) tau2 <- hMean::estimateTau2()
+    if (is.null(tau2)) {
+        tau2 <- confMeta::estimate_tau2(estimates = thetahat, SEs = se)
+    }
 
     # get the CIs and minimum gamma values
     new_methods <- get_new_intervals(
@@ -1321,7 +1370,8 @@ sim <- function(
         types["heterogeneity"] %in% c("character"),
         types["dist"] %in% c("character"),
         types["bias"] %in% c("character"),
-        types["large"] %in% c("double", "numeric", "integer")
+        types["large"] %in% c("double", "numeric", "integer"),
+        types["het_est_method"] %in% c("character")
     )
 
     # check grid
@@ -1336,7 +1386,8 @@ sim <- function(
         is.numeric(grid$large), all(is.finite(grid$large)),
         all(grid$large %in% c(0, 1, 2)),
         is.character(grid$bias), all(!is.na(grid$bias)),
-        all(grid$k >= grid$large)
+        all(grid$k >= grid$large),
+        is.character(grid$het_est_method)
     )
 
     # check other arguments
@@ -1424,6 +1475,8 @@ grid <- expand.grid(
     bias = c("none", "moderate", "strong"),
     # number of large studies
     large = c(0, 1, 2),
+    # method of heterogeneity estimation
+    het_est_method = c("REML"),
     stringsAsFactors = FALSE
 )
 
