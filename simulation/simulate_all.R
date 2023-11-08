@@ -1461,13 +1461,13 @@ grid <- expand.grid(
     # sample size of trial
     sampleSize = 50,
     # average effect, impacts selection bias
-    effect = 0.2,
+    effect = c(0.2, 0.5),
     # Higgin's I^2 heterogeneity measure
     I2 = c(0, 0.3, 0.6, 0.9),
     # number of studies
     k = c(3, 5, 10, 20, 50),
     # The heterogeneity model that the studies are simulated from
-    heterogeneity = c("additive", "multiplicative"),
+    heterogeneity = c("additive"),
     # distribution
     dist = c("Gaussian", "t"),
     # bias
@@ -1475,7 +1475,9 @@ grid <- expand.grid(
     # number of large studies
     large = c(0, 1, 2),
     # method of heterogeneity estimation
-    het_est_method = c("REML"),
+    # this is only done for methods
+    het_est_method = c("none", "DL", "PM", "REML"),
+    #
     stringsAsFactors = FALSE
 )
 
