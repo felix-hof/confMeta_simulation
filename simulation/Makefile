@@ -8,4 +8,7 @@ figs: RData/simulate_all.RData
 	  Rscript simulate_all_plot_results.R > simulate_all_plot_results.Rout 2>&1; \
 	fi
 
-.PHONY: figs
+clean:
+	rm -rf error.* pars.rds
+
+.PHONY: figs clean

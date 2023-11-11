@@ -836,8 +836,8 @@ sim_effects <- function(pars, i) {
 ################################################################################
 
 # estimate tau2 with different methods
-get_tau2 <- function(thetahat, se, methods) {
-    get_one_tau2 <- function(thetahat, se, method) {
+get_tau2 <- function(thetahat, se, methods, control) {
+    get_one_tau2 <- function(thetahat, se, method, control) {
         if (method == "none") {
             0
         } else {
@@ -845,11 +845,19 @@ get_tau2 <- function(thetahat, se, methods) {
                 TE = thetahat,
                 seTE = se,
                 method.tau = method,
-                sm = "MD"
+                sm = "MD",
+                control = control
             )$tau2
         }
     }
-    vapply(methods, get_one_tau2, se = se, thetahat = thetahat, double(1L))
+    vapply(
+        methods,
+        get_one_tau2,
+        se = se,
+        thetahat = thetahat,
+        control = control,
+        FUN.VALUE = double(1L)
+    )
 }
 
 #' Confidence intervals from effect estimates and their standard errors
@@ -869,11 +877,17 @@ sim2CIs <- function(x) {
     # Store the attributes of x
     att <- attributes(x)
 
+    control <- list(
+        stepadj = 0.5,
+        maxiter = 1000
+    )
+
     # estimate tau2
     tau2 <- get_tau2(
         methods = c("none", "DL", "PM", "REML"),
         thetahat = thetahat,
-        se = se
+        se = se,
+        control = control
     )
 
     # get the CIs of the classic methods
@@ -1535,8 +1549,7 @@ sim <- function(
         types["heterogeneity"] %in% c("character"),
         types["dist"] %in% c("character"),
         types["bias"] %in% c("character"),
-        types["large"] %in% c("double", "numeric", "integer"),
-        types["het_est_method"] %in% c("character")
+        types["large"] %in% c("double", "numeric", "integer")
     )
 
     # check grid
@@ -1551,8 +1564,7 @@ sim <- function(
         is.numeric(grid$large), all(is.finite(grid$large)),
         all(grid$large %in% c(0, 1, 2)),
         is.character(grid$bias), all(!is.na(grid$bias)),
-        all(grid$k >= grid$large),
-        is.character(grid$het_est_method)
+        all(grid$k >= grid$large)
     )
 
     # check other arguments
@@ -1645,8 +1657,8 @@ grid <- expand.grid(
 
 ## run simulation, e.g., on the Rambo server of I-MATH
 start <- Sys.time()
-out <- sim(grid = grid, N = 5e3, cores = 120)
-# out <- sim(grid = grid[688:703, ], N = 10, cores = 15)
+out <- sim(grid = grid, N = 1e3, cores = 120)
+# out <- sim(grid = grid[600:703, ], N = 4, cores = 15)
 end <- Sys.time()
 print(end - start)
 
