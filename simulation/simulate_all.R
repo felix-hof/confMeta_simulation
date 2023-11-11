@@ -189,79 +189,106 @@ hMeanChiSqMu_chisq <- function(
 ## - sim2CIs
 
 ## Fit model with Henmi & Copas
-get_classic_obj_hc <- function(thetahat, se, control) {
+get_classic_obj_hc <- function(thetahat, se, ...) {
     metafor::hc(
-        object = metafor::rma(yi = thetahat, sei = se, control = control)
+        object = metafor::rma(yi = thetahat, sei = se, ...)
     )
 }
 ## Fit model with REML
-get_classic_obj_reml <- function(thetahat, se, control) {
+get_classic_obj_reml <- function(thetahat, se, ...) {
     meta::metagen(
         TE = thetahat,
         seTE = se,
         sm = "MD",
         method.tau = "REML",
-        control = control
+        ...
     )
 }
 ## Fit model with Hartung-Knapp
-get_classic_obj_hk <- function(thetahat, se, control) {
+get_classic_obj_hk <- function(thetahat, se, ...) {
     meta::metagen(
         TE = thetahat,
         seTE = se,
         sm = "MD",
         method.tau = "REML",
         hakn = TRUE,
-        control = control
+        ...
     )
 }
+## Fit model with bayesmeta
+tau_prior_bm <- function(x) {
+    bayesmeta::dhalfnormal(x, scale = 0.3)
+}
+get_classic_obj_bm <- function(thetahat, se) {
+    bayesmeta::bayesmeta(
+        y = thetahat,
+        sigma = se,
+        tau.prior = tau_prior_bm
+    )
+}
+
 ## wrapper function
-get_classic_obj <- function(method, thetahat, se, control) {
+get_classic_obj <- function(method, thetahat, se, ...) {
     switch(
         method,
         "hk" = get_classic_obj_hk(
             thetahat = thetahat,
             se = se,
-            control = control
+            ... = ...
         ),
         "hc" = get_classic_obj_hc(
             thetahat = thetahat,
             se = se,
-            control = control
+            ... = ...
         ),
         "reml" = get_classic_obj_reml(
             thetahat = thetahat,
             se = se,
-            control = control
+            ... = ...
+        ),
+        "bm" = get_classic_obj_bm(
+            thetahat = thetahat,
+            se = se
         )
     )
 }
 ## extract lower and upper bound for Hartung-Knapp and REML CI
 get_classic_ci_reml <- get_classic_ci_hk <- function(obj) {
-    with(obj, c(lower.random, upper.random))
+    setNames(
+        with(obj, c(lower.random, upper.random, TE.random)),
+        c("lower", "upper", "estimate")
+    )
 }
 ## extract lower and upper bound for Hartung-Knapp and REML PI
-get_classic_pi_reml <- get_classic_pi_hk <- function(obj) {
-    with(obj, c(lower.predict, upper.predict))
-}
+# get_classic_pi_reml <- get_classic_pi_hk <- function(obj) {
+#     with(obj, c(lower.predict, upper.predict))
+# }
 ## extract lower and upper bound for Henmi & Copas CI
 get_classic_ci_hc <- function(obj) {
-    with(obj, c(ci.lb, ci.ub))
+    setNames(with(obj, c(ci.lb, ci.ub, beta)), c("lower", "upper", "estimate"))
+}
+## extract lower and upper bound for Bayesmeta
+get_classic_ci_bm <- function(obj) {
+    num <- unname(obj$summary[c(1L, 5:6), 3L])
+    setNames(num[c(2, 3, 1)], c("lower", "upper", "estimate"))
 }
 ## which function to call depending on the method
 get_classic_interval <- function(method, obj) {
     switch(
         method,
-        "hk_pi" = get_classic_pi_hk(obj = obj),
-        "reml_pi" = get_classic_pi_reml(obj = obj),
+        "hk_pi" = get_classic_pi_hk(obj = obj),      # unusable since no estimate
+        "reml_pi" = get_classic_pi_reml(obj = obj),  # unusable since no estimate
         "hk_ci" = get_classic_ci_hk(obj = obj),
         "reml_ci" = get_classic_ci_reml(obj = obj),
-        "hc_ci" = get_classic_ci_hc(obj = obj)
+        "hc_ci" = get_classic_ci_hc(obj = obj),
+        "bm_ci" = get_classic_ci_bm(obj = obj)
     )
 }
 
 ## This is the final wrapper function of all the above functions
-## related to the calculation of CIs for the classic methods.
+## related to the calculation of CIs for the classic methods, i.e.
+## all methods that use the meta package.
+## It also includes a part for bayesmeta
 ## This function is used in:
 ## - sim2CIs
 get_classic_intervals <- function(methods, thetahat, se) {
@@ -274,15 +301,17 @@ get_classic_intervals <- function(methods, thetahat, se) {
         "reml_ci" = "reml",
         "reml_pi" = "reml",
         "hk_ci" = "hk",
-        "hk_pi" = "hk"
+        "hk_pi" = "hk",
+        "bm_ci" = "bm"
     )
-    meth2name <- c(
-        "hc_ci" = "Henmi & Copas CI",
-        "reml_ci" = "REML CI",
-        "reml_pi" = "REML PI",
-        "hk_ci" = "Hartung & Knapp CI",
-        "hk_pi" = "Hartung & Knapp PI"
-    )
+    # meth2name <- c(
+    #     "hc_ci" = "Henmi & Copas CI",
+    #     "reml_ci" = "REML CI",
+    #     "reml_pi" = "REML PI",
+    #     "hk_ci" = "Hartung & Knapp CI",
+    #     "hk_pi" = "Hartung & Knapp PI",
+    #     "bm_ci" = "Bayesmeta CI"
+    # )
     # which objects to fit
     obj_codes <- meth2obj_code[methods]
     obj_fit <- unique(obj_codes)
@@ -296,7 +325,7 @@ get_classic_intervals <- function(methods, thetahat, se) {
     )
     names(objs) <- obj_fit
     # get the CIs
-    ci <- matrix(NA_real_, nrow = length(methods), ncol = 2L)
+    ci <- matrix(NA_real_, nrow = length(methods), ncol = 3L)
     for (i in seq_along(methods)) {
         ci[i, ] <- get_classic_interval(
             method = methods[i],
@@ -305,22 +334,23 @@ get_classic_intervals <- function(methods, thetahat, se) {
     }
     # convert this to df
     # which methods to call
-    names <- methods
     out <- data.frame(
         lower = ci[, 1L],
         upper = ci[, 2L],
-        method = names,
+        estimate = ci[, 3L],
+        method = methods,
+        tau_method = NA_character_,
         ci_exists = TRUE,
         is_ci = grepl("_ci$", methods),
-        is_pi = grepl("_pi$", methods),
+        is_pi = grepl("_pi$", methods), ## no need for PIs
         is_new = FALSE,
         stringsAsFactors = FALSE,
         row.names = NULL
     )
     # attach attribute tau2
-    if ("reml" %in% obj_codes) {
-        attr(out, which = "tau2") <- objs$reml$tau2
-    }
+    # if ("reml" %in% obj_codes) {
+    #     attr(out, which = "tau2") <- objs$reml$tau2
+    # }
     # return
     out
 }
@@ -349,20 +379,20 @@ get_p_value_functions <- function(methods) {
 ## list all the argument configurations here
 get_p_value_args <- function(tau2, phi) {
     list(
-        none = list(
-            heterogeneity = "none",
-            check_inputs = FALSE
-        ),
+        # none = list(
+        #     heterogeneity = "none",
+        #     check_inputs = FALSE
+        # ),
         additive = list(
             heterogeneity = "additive",
             tau2 = tau2,
             check_inputs = FALSE
-        ),
-        multiplicative = list(
-            heterogeneity = "multiplicative",
-            phi = phi,
-            check_inputs = FALSE
-        )
+        )#,
+        # multiplicative = list(
+        #     heterogeneity = "multiplicative",
+        #     phi = phi,
+        #     check_inputs = FALSE
+        # )
     )
 }
 
@@ -410,16 +440,18 @@ get_new_ci_gamma <- function(thetahat, se, p_funcs, arguments) {
     # Pre-allocate memory for output
     ci <- vector("list", l)
     names(ci) <- nms
-    gamma <- matrix(NA_real_, ncol = 2L, nrow = l)
+    # gamma <- matrix(NA_real_, ncol = 2L, nrow = l)
 
     # store the number of rows for each method
     ci_row <- integer(l)
+    est_row <- integer(l)
 
     # compute CIs
     for (k in seq_len(l)) {
         # make the function for current config
+        arg_list <- arguments[[p_arguments_idx[k]]]
         f <- p_funcs[[p_funcs_idx[k]]]
-        formals(f) <- modifyList(formals(f), arguments[[p_arguments_idx[k]]])
+        formals(f) <- modifyList(formals(f), arg_list)
         # compute CI
         res <- confMeta:::get_ci(
             estimates = thetahat,
@@ -428,14 +460,39 @@ get_new_ci_gamma <- function(thetahat, se, p_funcs, arguments) {
             p_fun = f
         )
         # CI related stuff
-        ci[[k]] <- res$CI
+        ci[[k]] <- list(
+            "ci" = res$CI,
+            "est" = res$p_max[, 1L],
+            "p_max" = unique(res$p_max[, 2L]),
+            "tau_method" = if (is.null(arg_list$tau2)) {
+                NA_character_
+            }  else {
+                names(arg_list$tau2)
+            }
+        )
         ci_row[k] <- nrow(res$CI)
-        # gamma related stuff
-        gamma[k, ] <- get_gamma_x_y(res$gamma)
+        est_row[k] <- nrow(res$p_max)
+        # # gamma related stuff
+        # gamma[k, ] <- get_gamma_x_y(res$gamma)
     }
 
     # rbind all of the list elements
-    ci_mat <- do.call("rbind", ci)
+    ci_mat <- do.call("rbind", lapply(ci, "[[", i = "ci"))
+    est_vec <- do.call("c", lapply(ci, "[[", i = "est"))
+    pmax_vec <- do.call("c", lapply(ci, "[[", i = "p_max"))
+    tm <- do.call("c", lapply(ci, "[[", i = "tau_method"))
+    tau_method_ci <- rep2(
+        tm,
+        each = do.call("c", lapply(ci, function(x) nrow(x$ci)))
+    )
+    tau_method_est <- rep2(
+        tm,
+        each = do.call("c", lapply(ci, function(x) length(x$est)))
+    )
+    tau_method_pmax <- rep2(
+        tm,
+        each = do.call("c", lapply(ci, function(x) length(x$p_max)))
+    )
 
     # return the data.frame
     list(
@@ -443,17 +500,33 @@ get_new_ci_gamma <- function(thetahat, se, p_funcs, arguments) {
             lower = ci_mat[, 1L],
             upper = ci_mat[, 2L],
             method = rep2(names(ci), each = ci_row),
+            tau_method = tau_method_ci,
             ci_exists = ifelse(is.na(ci_mat[, 1L]), FALSE, TRUE),
             is_ci = TRUE,
-            is_pi = TRUE,
+            is_pi = FALSE,
             is_new = TRUE,
             stringsAsFactors = FALSE,
             row.names = NULL
         ),
-        gamma = data.frame(
-            gamma_min = gamma[, 2L],
-            x_gamma_min = gamma[, 1L],
+        # gamma = data.frame(
+        #     gamma_min = gamma[, 2L],
+        #     x_gamma_min = gamma[, 1L],
+        #     method = nms,
+        #     tau_method = tm,
+        #     stringsAsFactors = FALSE,
+        #     row.names = NULL
+        # ),
+        estimates = data.frame(
+            estimate = est_vec,
+            method = rep2(names(ci), each = est_row),
+            tau_method = tau_method_est,
+            stringsAsFactors = FALSE,
+            row.names = NULL
+        ),
+        p_max = data.frame(
+            p_max = pmax_vec,
             method = nms,
+            tau_method = tau_method_pmax,
             stringsAsFactors = FALSE,
             row.names = NULL
         )
@@ -762,6 +835,22 @@ sim_effects <- function(pars, i) {
 #                            Calculating the CIs                               #
 ################################################################################
 
+# estimate tau2 with different methods
+get_tau2 <- function(thetahat, se, methods) {
+    get_one_tau2 <- function(thetahat, se, method) {
+        if (method == "none") {
+            0
+        } else {
+            meta::metagen(
+                TE = thetahat,
+                seTE = se,
+                method.tau = method,
+                sm = "MD"
+            )$tau2
+        }
+    }
+    vapply(methods, get_one_tau2, se = se, thetahat = thetahat, double(1L))
+}
 
 #' Confidence intervals from effect estimates and their standard errors
 #'
@@ -780,45 +869,77 @@ sim2CIs <- function(x) {
     # Store the attributes of x
     att <- attributes(x)
 
-    # get the CIs of the classic methods
-    classic_methods <- get_classic_intervals(
-        methods = c("hk_ci", "hk_pi", "reml_ci", "reml_pi", "hc_ci"),
+    # estimate tau2
+    tau2 <- get_tau2(
+        methods = c("none", "DL", "PM", "REML"),
         thetahat = thetahat,
         se = se
     )
 
-    # TODO: add further methods for phi/tau2 estimation -> loop over them
-    # and return the same data frame
+    # get the CIs of the classic methods
+    classic_methods <- get_classic_intervals(
+        methods = c("hk_ci", "hc_ci"), # "bm_ci"),
+        thetahat = thetahat,
+        se = se
+    )
 
     # For the new methods, we need phi and tau2 to estimate heterogeneity
     # we estimate phi ourselves and for tau2 we check whether it has already
     # been computed. If not, estimate it ourselves
-    phi <- confMeta::estimate_phi(estimates = thetahat, SEs = se)
-    tau2 <- attributes(classic_methods)$tau2
-    if (is.null(tau2)) {
-        tau2 <- confMeta::estimate_tau2(estimates = thetahat, SEs = se)
-    }
+    # phi <- confMeta::estimate_phi(estimates = thetahat, SEs = se)
+    # tau2 <- attributes(classic_methods)$tau2
+    # if (is.null(tau2)) {
+    #     tau2 <- confMeta::estimate_tau2(estimates = thetahat, SEs = se)
+    # }
 
-    # get the CIs and minimum gamma values
-    new_methods <- get_new_intervals(
-        methods = c(
-            "hMean_f",
-            "hMean_chisq",
-            "ktrials",
-            "pearson",
-            "edgington",
-            "fisher"
+    # Loop over tau2 estimation methods ["none", "DL", "PM", "REML"] and
+    # calculate [CI, gamma, estimates, p_max]
+    new_methods <- setNames(
+        lapply(
+            seq_along(tau2),
+            function(thetahat, se, tau2, x) {
+                get_new_intervals(
+                    methods = c(
+                        # "hMean_f",
+                        # "hMean_chisq",
+                        # "ktrials",
+                        # "pearson",
+                        "edgington",
+                        "fisher"
+                    ),
+                    thetahat = thetahat,
+                    se = se,
+                    # phi = phi,
+                    phi = NULL,
+                    tau2 = tau2[x]
+                )
+            },
+            thetahat = thetahat,
+            se = se,
+            tau2 = tau2
         ),
-        thetahat = thetahat,
-        se = se,
-        phi = phi,
-        tau2 = tau2
+        names(tau2)
     )
 
+    # Assemble output
+    CIs <- rbind(
+        subset(classic_methods, select = -c(estimate)),
+        do.call("rbind", lapply(new_methods, "[[", i = "CI")),
+        make.row.names = FALSE
+    )
+    estimates <- rbind(
+        subset(classic_methods, select = c(estimate, method, tau_method)),
+        do.call("rbind", lapply(new_methods, "[[", i = "estimates")),
+        make.row.names = FALSE
+    )
+    p_max <- do.call("rbind", lapply(new_methods, "[[", i = "p_max"))
+    rownames(p_max) <- NULL
+
     list(
-        CIs = rbind(classic_methods, new_methods$CI),
-        model = att$heterogeneity,
-        gamma = new_methods$gamma,
+        CIs = CIs,
+        estimates = estimates,
+        p_max = p_max,
+        model = att$heterogeneity, # this is the simulation model
         theta = thetahat,
         delta = delta,
         effect = att$effect
@@ -975,12 +1096,22 @@ calc_score <- function(cis, effect, ci_exists) {
     }
 }
 
-# returnt the number of CIs
+# returns the number of CIs
 calc_n <- function(cis, ci_exists) {
     if (!ci_exists) {
         0
     } else {
         nrow(cis)
+    }
+}
+
+# returns the squared difference between the estimate and the effect
+# in case of multiple effect estimates, NA is returned
+calc_sq_diff <- function(estimates, effect) {
+    if (length(estimates) != 1L) {
+        NA_real_
+    } else {
+        (effect - estimates)^2
     }
 }
 
@@ -1045,6 +1176,15 @@ get_measures <- function(is_ci, is_pi, is_new) {
                 cis = cis,
                 ci_exists = ci_exists
             )
+        }),
+        p_max = quote({
+            unique(p_max)
+        }),
+        mse = quote({
+            calc_sq_diff(
+                estimates = estimates,
+                effect = effect
+            )
         })
     )
 
@@ -1054,11 +1194,12 @@ get_measures <- function(is_ci, is_pi, is_new) {
     if (is_ci) {
         calc_meas[[counter]] <- c(
             "coverage_true",
-            "coverage_effects",
-            "coverage_effects_min1",
-            "coverage_effects_all",
+            # "coverage_effects",
+            # "coverage_effects_min1",
+            # "coverage_effects_all",
             "width",
-            "score"
+            "score",
+            "mse"
         )
         counter <- counter + 1L
     }
@@ -1071,9 +1212,10 @@ get_measures <- function(is_ci, is_pi, is_new) {
     if (is_new) {
         calc_meas[[counter]] <- c(
             "n",
-            "gamma_min"
+            # "gamma",
+            "p_max"
         )
-        # counter <- counter + 1L
+        counter <- counter + 1L
     }
     calc_meas <- do.call("c", calc_meas)
 
@@ -1101,9 +1243,18 @@ get_measures <- function(is_ci, is_pi, is_new) {
 #' \item{\code{n}}{Number of intervals}
 CI2measures <- function(x, pars) {
 
-    ci_df <- x$CIs
+    # Construct a new method_id (since this is now composed of
+    # combination method and tau_method)
+    df_list <- lapply(
+        c("CIs" = "CIs", "estimates" = "estimates", "p_max" = "p_max"),
+        function(x, type) {
+            within(x[[type]], method_id <- paste0(method, "_", tau_method))
+        },
+        x = x
+    )
     # get the method corresponding to each row of the CIs
-    ci_method <- ci_df$method
+    ci_df <- df_list$CIs
+    ci_method <- ci_df$method_id
     # get the indices of unique methods and their names
     unique_methods_idx <- !duplicated(ci_method)
     unique_methods <- ci_method[unique_methods_idx]
@@ -1115,9 +1266,15 @@ CI2measures <- function(x, pars) {
     is_new <- ci_df$is_new[unique_methods_idx]
     # convert the CIs to matrix
     cis <- as.matrix(ci_df[c("lower", "upper")])
-    # get gamma
-    gamma_methods <- x$gamma$method
-    gamma <- as.matrix(x$gamma[c("gamma_min", "x_gamma_min")])
+    # # get gamma
+    # gamma_methods <- x$gamma$method
+    # gamma <- as.matrix(x$gamma[c("gamma_min", "x_gamma_min")])
+    # get p_max
+    p_max <- df_list$p_max$p_max
+    p_max_method <- df_list$p_max$method_id
+    # get estimates
+    estimates <- df_list$estimates$estimate
+    estimates_method <- df_list$estimates$method_id
     # get the deltas
     delta <- x$delta
     # get the effect
@@ -1131,6 +1288,12 @@ CI2measures <- function(x, pars) {
         curr_is_ci <- is_ci[k]
         curr_is_pi <- is_pi[k]
         curr_is_new <- is_new[k]
+        # Get the unevaluated function calls for the current method
+        curr_meas <- get_measures(
+            is_ci = curr_is_ci,
+            is_pi = curr_is_pi,
+            is_new = curr_is_new
+        )
         # create the argument list
         arg_list <- list(
             cis = cis[ci_method == curr_method, , drop = FALSE],
@@ -1138,21 +1301,24 @@ CI2measures <- function(x, pars) {
             ci_exists = ci_exists[k],
             delta = delta,
             pars = pars,
-            gamma = gamma[gamma_methods == curr_method, , drop = FALSE]
-        )
-        # Get the unevaluated function calls for the current method
-        curr_meas <- get_measures(
-            is_ci = curr_is_ci,
-            is_pi = curr_is_pi,
-            is_new = curr_is_new
+            p_max = if (curr_is_new) {
+                p_max[p_max_method == curr_method]
+            } else {
+                NULL
+            },
+            # pass estimate always here
+            # if more than one estimate, return NA in calc_diff function
+            estimates = estimates[estimates_method == curr_method]
+            # gamma = gamma[gamma_methods == curr_method, , drop = FALSE]
         )
         # Calculate the measures
         out[[k]] <- data.frame(
             value = vapply(
                 curr_meas,
-                function(expr) {
+                function(expr, arg_list) {
                     eval(expr, envir = arg_list)
                 },
+                arg_list = arg_list,
                 numeric(1L)
             ),
             measure = names(curr_meas),
@@ -1203,8 +1369,8 @@ calc_measures <- function(x, pars, i) {
 
 # Calculate the mean measure for each of the method and measure subgroups
 get_mean_stats <- function(df) {
-    # Summarise all the measures except gamma_min
-    df_sub <- subset(df, measure != "gamma_min")
+    # Summarise all the measures except gamma_min & p_max
+    df_sub <- subset(df, !(measure %in% c("gamma_min", "p_max")))
     mean_stats <- stats::aggregate(
         value ~ measure + method + is_ci + is_pi + is_new,
         FUN = mean,
@@ -1221,7 +1387,7 @@ get_gamma_stats <- function(df) {
     # To the correct subset of df and add
     # some information regarding stat and
     # usage
-    df_sub <- subset(df, measure == "gamma_min")
+    df_sub <- subset(df, measure %in% c("gamma_min", "p_max"))
     f_list_gamma <- list(
         min = min,
         firstQuart = function(x) {
@@ -1242,7 +1408,7 @@ get_gamma_stats <- function(df) {
                 FUN = f_list_gamma[[i]],
                 data = df_sub
             )
-            res$usage <- "gamma_min_plot"
+            res$usage <- "summary_stat_plot"
             res$stat_fun <- names(f_list_gamma)[i]
             res
         }
@@ -1279,7 +1445,7 @@ get_n_stats <- function(df) {
         seq_along(f_list_n),
         function(i) {
             res <- stats::aggregate(
-                value ~ method + measure + is_ci + is_pi + is_new,
+                value ~ measure + method + is_ci + is_pi + is_new,
                 FUN = f_list_n[[i]],
                 data = df_sub
             )
@@ -1474,10 +1640,6 @@ grid <- expand.grid(
     bias = c("none", "moderate", "strong"),
     # number of large studies
     large = c(0, 1, 2),
-    # method of heterogeneity estimation
-    # this is only done for methods
-    het_est_method = c("none", "DL", "PM", "REML"),
-    #
     stringsAsFactors = FALSE
 )
 
