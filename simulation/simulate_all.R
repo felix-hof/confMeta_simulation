@@ -878,8 +878,8 @@ sim2CIs <- function(x) {
     att <- attributes(x)
 
     control <- list(
-        stepadj = 0.5,
-        maxiter = 1000
+        stepadj = 0.25,
+        maxiter = 1e4
     )
 
     # estimate tau2
