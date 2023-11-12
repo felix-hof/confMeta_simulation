@@ -1,7 +1,10 @@
-.DEFAULT_GOAL := RData/simulate_all.RData
+.DEFAULT_GOAL := data
 
 RData/simulate_all.RData: simulate_all.R
 	Rscript install_packages.R && Rscript simulate_all.R 2>&1 | tee simulate_all.Rout
+
+data: RData/simulate_all.RData
+
 
 figs: RData/simulate_all.RData
 	if [ ! -f error.txt ]; then \
@@ -11,4 +14,4 @@ figs: RData/simulate_all.RData
 clean:
 	rm -rf error.* pars.rds
 
-.PHONY: figs clean
+.PHONY: figs clean data
