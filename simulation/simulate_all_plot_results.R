@@ -60,34 +60,55 @@ make_title <- function(df) {
 convert_names <- function(id_strings) {
     st <- strsplit(id_strings, split = "_")
     get_names <- function(str) {
-        l <- length(str)
-        if (l == 1L) {
-            str
-        } else {
-            meth <- c(
-                "hMean" = "Harmonic Mean",
-                "ktrials" = "k-Trials",
-                "pearson" = "Pearson",
-                "fisher" = "Fisher",
-                "edgington" = "Edgington"
-            )
-            het <- c(
-                "none" = "",
-                "additive" = "Additive",
-                "multiplicative" = "Multiplicative"
-            )
-            m <- meth[str[1L]]
-            h <- het[str[l]]
-            out <- if (h == "") paste(m, "CI") else paste(m, h, "CI")
-            if (l == 3L) out <- paste0(out, " (", str[2L], ")")
-            out
-        }
+        meth <- c(
+            "hMeanF" = "Harmonic Mean (f)",
+            "hMeanChisq" = "Harmonic Mean (chisq)",
+            "ktrials" = "k-Trials",
+            "pearson" = "Pearson",
+            "fisher" = "Fisher",
+            "edgington" = "Edgington",
+            "hc" =  "Henmi & Copas",
+            "hk" = "Hartung & Knapp",
+            "reml" = "Random effects"
+        )
+        type <- c(
+            "ci" = "CI",
+            "pi" = "PI"
+        )
+        # het <- c(
+        #     "none" = "",
+        #     "additive" = "Additive",
+        #     "multiplicative" = "Multiplicative"
+        # )
+        tau_meth <- c(
+            "none" = "none",
+            "DL" = "DL",
+            "PM" = "PM",
+            "REML" = "REML"
+        )
+        paste0(
+            meth[str[1L]],
+            # het[str[3L]],
+            " (",
+            tau_meth[str[4L]],
+            ") ",
+            type[str[2L]]
+        )
+        # m <- meth[str[1L]]
+        # h <- het[str[l]]
+        # out <- if (h == "") paste(m, "CI") else paste(m, h, "CI")
+        # if (l == 3L) out <- paste0(out, " (", str[2L], ")")
+        # out
     }
     vapply(st, get_names, character(1L))
 }
 
 # Load data ----
 load(paste0("RData/simulate_all.RData"))
+
+# head(out)
+# tail(out)
+
 # improv for now (TODO: once this is handled in sim, delete it here)
 out <- out |>
     mutate(method = convert_names(method))
@@ -96,9 +117,9 @@ out <- out |>
 out_meanplots <- out %>%
     filter(usage == "mean_plot", measure != "gamma_min")
 
-# Prepare data (gammaMin) ----
-out_gammamin <- out %>%
-    filter(usage == "gamma_min_plot") %>%
+# Prepare data (gammamax) ----
+out_gammamax <- out %>%
+    filter(usage == "summary_stat_plot") %>%
     mutate(
         measure = case_when(
             stat_fun == "min" ~ "Minimum",
@@ -144,7 +165,7 @@ plotPanels <- function(
     measure = c(
         "coverage_true", "coverage_effects", "coverage_effects_all",
         "coverage_effects_min1", "coverage_prediction", "n",
-        "width", "score"
+        "width", "score", "mse"
     ),
     by = c("method", "I2")
 ) {
@@ -188,10 +209,10 @@ plotPanels <- function(
                         mutate(method = factor(method, levels = order))
                 } else {
                     order <- c(
-                        "Harmonic Mean CI (chisq)",
-                        "Harmonic Mean Additive CI (chisq)",
-                        "Harmonic Mean Multiplicative CI (chisq)",
-                        "Hartung & Knapp CI",
+                        # "Harmonic Mean CI (chisq)",
+                        # "Harmonic Mean Additive CI (chisq)",
+                        # "Harmonic Mean Multiplicative CI (chisq)",
+                        # "Hartung & Knapp CI",
                         # "Harmonic Mean CI (f)",
                         # "Harmonic Mean Additive CI (f)",
                         # "Harmonic Mean Multiplicative CI (f)",
@@ -201,14 +222,20 @@ plotPanels <- function(
                         # "Pearson CI",
                         # "Pearson Additive CI",
                         # "Pearson Multiplicative CI",
-                        "Edgington CI",
-                        "Edgington Additive CI",
-                        "Edgington Multiplicative CI",
-                        "Henmi & Copas CI",
-                        "Fisher CI",
-                        "Fisher Additive CI",
-                        "Fisher Multiplicative CI",
-                        "REML CI"
+                        "Edgington (none) CI",
+                        "Edgington (REML) CI",
+                        "Edgington (DL) CI",
+                        "Edgington (PM) CI",
+                        "Fisher (none) CI",
+                        "Fisher (REML) CI",
+                        "Fisher (DL) CI",
+                        "Fisher (PM) CI",
+                        "Random effects (none) CI",
+                        "Random effects (REML) CI",
+                        "Random effects (DL) CI",
+                        "Random effects (PM) CI",
+                        "Hartung & Knapp (REML) CI",
+                        "Henmi & Copas (DL) CI"
                     )
                     .[] %>%
                         filter(method %in% order) %>%
@@ -218,7 +245,7 @@ plotPanels <- function(
             ggplot(mapping = aes(x = k, y = value, color = I2)) +
             facet_wrap(~ method) +
             geom_point() +
-            stat_summary(fun="mean", geom="line", aes(group=I2)) +
+            stat_summary(fun = "mean", geom = "line", aes(group = I2)) +
             scale_color_discrete(name = expression(I^2)) +
             xlab("# studies") +
             ylab(measure)
@@ -255,7 +282,8 @@ opts <- list(
     dist = out_meanplots %>% pull(dist) %>% unique(),
     bias = out_meanplots %>% pull(bias) %>% unique(),
     large = out_meanplots %>% pull(large) %>% unique(),
-    heterogeneity = out_meanplots %>% pull(heterogeneity) %>% unique()
+    effect = out_meanplots %>% pull(effect) %>% unique() #,
+    # heterogeneity = out_meanplots %>% pull(heterogeneity) %>% unique()
 )
 measure_opts <- out_meanplots %>% pull(measure) %>% unique()
 
@@ -295,7 +323,8 @@ for (x in list_seq) { # loop over summary (eg. dist)
                         select(
                             -k, -I2, -method, -measure,
                             -value, -all_of(current),
-                            -sampleSize, -usage, -stat_fun
+                            -sampleSize, -usage, -stat_fun,
+                            -is_ci, -is_pi, -is_new
                         ) %>%
                         distinct() %>%
                         bind_cols(!!current := z) %>%
@@ -339,25 +368,26 @@ for (x in list_seq) { # loop over summary (eg. dist)
 
 ## gamma_min summary statistics ------------------------------------------------
 
-out_path <- file.path(out_dir, "figs/min_pH")
+out_path <- file.path(out_dir, "figs/max_pH")
 dir.create(out_path, showWarnings = FALSE, recursive = TRUE)
 
 opts <- list(
-    dist = unique(out_gammamin$dist),
-    bias = unique(out_gammamin$bias),
-    large = unique(out_gammamin$large),
-    heterogeneity =  unique(out_gammamin$heterogeneity),
-    I2 =  unique(out_gammamin$I2)
+    dist = unique(out_gammamax$dist),
+    bias = unique(out_gammamax$bias),
+    large = unique(out_gammamax$large),
+    # heterogeneity =  unique(out_gammamax$heterogeneity),
+    effect = unique(out_gammamax$effect),
+    I2 =  unique(out_gammamax$I2)
 )
-measure_opts <- unique(out_gammamin$measure)
+measure_opts <- unique(out_gammamax$measure)
 
 list_seq <- seq_along(opts)
 
 # Set order of the plots
 ord <- c(
-    "Harmonic Mean CI (chisq)",
-    "Harmonic Mean Additive CI (chisq)",
-    "Harmonic Mean Multiplicative CI (chisq)",
+    # "Harmonic Mean CI (chisq)",
+    # "Harmonic Mean Additive CI (chisq)",
+    # "Harmonic Mean Multiplicative CI (chisq)",
     #"Harmonic Mean CI (f)",
     #"Harmonic Mean Additive CI (f)",
     #"Harmonic Mean Multiplicative CI (f)",
@@ -367,16 +397,28 @@ ord <- c(
     # "Pearson CI",
     # "Pearson Additive CI",
     # "Pearson Multiplicative CI",
-    "Edgington CI",
-    "Edgington Additive CI",
-    "Edgington Multiplicative CI",
-    "Fisher CI",
-    "Fisher Additive CI",
-    "Fisher Multiplicative CI"
+    # "Edgington CI",
+    # "Edgington Additive CI",
+    # "Edgington Multiplicative CI",
+    # "Fisher CI",
+    # "Fisher Additive CI",
+    # "Fisher Multiplicative CI"
+    "Edgington (none) CI",
+    "Edgington (REML) CI",
+    "Edgington (DL) CI",
+    "Edgington (PM) CI",
+    "Fisher (none) CI",
+    "Fisher (REML) CI",
+    "Fisher (DL) CI",
+    "Fisher (PM) CI",
+    "Random effects (none) CI",
+    "Random effects (REML) CI",
+    "Random effects (DL) CI",
+    "Random effects (PM) CI"
 )
 
 ## For now, subset to only those methods we actually want plots of
-out_gammamin <- subset(out_gammamin, method %in% ord)
+out_gammamax <- subset(out_gammamax, method %in% ord)
 
 
 
@@ -402,32 +444,39 @@ for (x in list_seq) { # loop over summary (eg. dist)
             rhs <- grid_others[y, z]
             expr(`!!`(op)(!!sym(lhs), !!rhs))
         })
-        img_data <- out_gammamin %>%
+        img_data <- out_gammamax %>%
             filter(!!!filters) %>%
             mutate(method = factor(method, levels = ord))
-        lapply(current_levels, function(z) {
-            title <- img_data %>%
-                filter(!!sym(current) == z) %>%
-                select(
-                    -k, -method, -measure,
-                    -value, -all_of(current),
-                    -sampleSize, -usage, -stat_fun
-                ) %>%
-                distinct() %>%
-                bind_cols(!!current := z) %>%
-                select(order(colnames(.))) %>%
-                make_title()
-            img_data %>%
-                filter(!!sym(current) == z) %>%
-                ggplot(aes(x = k, y = value, color = measure)) +
+        lapply(
+            current_levels,
+            function(z) {
+                title <- img_data %>%
+                    filter(!!sym(current) == z) %>%
+                    select(
+                        -k, -method, -measure,
+                        -value, -all_of(current),
+                        -sampleSize, -usage, -stat_fun,
+                        -is_pi, -is_ci, -is_new
+                    ) %>%
+                    distinct() %>%
+                    bind_cols(!!current := z) %>%
+                    select(order(colnames(.))) %>%
+                    make_title()
+                img_data %>%
+                    filter(!!sym(current) == z) %>%
+                    ggplot(aes(x = k, y = value, color = measure)) +
                 geom_point() +
                 geom_line() +
                 ylim(c(0, 1)) +
-                facet_wrap(~method) +
-                labs(x = "# studies", y = "value",
-                     color = "Summary statistic",
-                     title = eval(title))
-        }) %>%
+                facet_wrap(~method, ncol = 4) +
+                labs(
+                    x = "# studies",
+                    y = "highest p-value",
+                    color = "Summary statistic",
+                    title = eval(title)
+                )
+            }
+        ) %>%
             wrap_plots(guides = "collect") &
             theme(legend.position = "bottom",
                   text = element_text(size = 9),
@@ -502,7 +551,8 @@ opts <- list(
     dist = unique(out_n$dist),
     bias = unique(out_n$bias),
     large = unique(out_n$large),
-    heterogeneity = unique(out_n$heterogeneity),
+    effect = unique(out_n$effect),
+    # heterogeneity = unique(out_n$heterogeneity),
     I2 = unique(out_n$I2),
     k = unique(out_n$k)
 )
@@ -514,24 +564,14 @@ list_seq <- seq_along(opts)
 
 # Set order of the plots
 ord <- c(
-    "Harmonic Mean CI (chisq)",
-    "Harmonic Mean Additive CI (chisq)",
-    "Harmonic Mean Multiplicative CI (chisq)",
-    #"Harmonic Mean CI (f)",
-    #"Harmonic Mean Additive CI (f)",
-    #"Harmonic Mean Multiplicative CI (f)",
-    # "k-Trials CI",
-    # "k-Trials Additive CI",
-    # "k-Trials Multiplicative CI",
-    # "Pearson CI",
-    # "Pearson Additive CI",
-    # "Pearson Multiplicative CI",
-    "Edgington CI",
-    "Edgington Additive CI",
-    "Edgington Multiplicative CI",
-    "Fisher CI",
-    "Fisher Additive CI",
-    "Fisher Multiplicative CI"
+    "Edgington (none) CI",
+    "Edgington (REML) CI",
+    "Edgington (DL) CI",
+    "Edgington (PM) CI",
+    "Fisher (none) CI",
+    "Fisher (REML) CI",
+    "Fisher (DL) CI",
+    "Fisher (PM) CI"
 )
 
 ## For now, subset to only those methods we actually want plots of
@@ -583,7 +623,7 @@ for (x in list_seq) {
                 ggplot(aes(x = measure, y = value)) +
                 geom_col(fill = viridisLite::viridis(1)) +
                 ylim(c(0, 1)) +
-                facet_wrap(~method) +
+                facet_wrap(~method, ncol = 4) +
                 labs(
                     x = "# intervals",
                     y = "relative frequency",
@@ -616,6 +656,8 @@ for (x in list_seq) {
 
 # Summary of meanplots ---------------------------------------------------------
 
+# TODO: edit filename (effect is not incorporated yet)
+
 # Make directories
 out_path <- file.path(out_dir, "figs/summary/")
 dir.create(out_path, showWarnings = FALSE, recursive = TRUE)
@@ -629,31 +671,21 @@ opts <- list(
 
 # Set the order of plots
 method_order <- c(
-    # "Harmonic Mean CI (chisq)",
-    "Harmonic Mean Additive CI (chisq)",
-    "Harmonic Mean Multiplicative CI (chisq)",
-    # "Harmonic Mean CI (f)",
-    # "Harmonic Mean Additive CI (f)",
-    # "Harmonic Mean Multiplicative CI (f)",
-    # "k-Trials CI",
-    # "k-Trials Additive CI",
-    # "k-Trials Multiplicative CI",
-    # "Pearson CI",
-    # "Pearson Additive CI",
-    # "Pearson Multiplicative CI",
-    # "Edgington CI",
-    "Edgington Additive CI",
-    "Edgington Multiplicative CI",
-    # "Fisher CI",
-    "Fisher Additive CI",
-    "Fisher Multiplicative CI",
-    "REML CI",
-    "REML PI",
-    "Hartung & Knapp CI",
-    "Hartung & Knapp PI"
-    # "Henmi & Copas CI"
+    "Edgington (none) CI",
+    "Edgington (REML) CI",
+    "Edgington (DL) CI",
+    "Edgington (PM) CI",
+    "Fisher (none) CI",
+    "Fisher (REML) CI",
+    "Fisher (DL) CI",
+    "Fisher (PM) CI",
+    "Random effects (none) CI",
+    "Random effects (REML) CI",
+    "Random effects (DL) CI",
+    "Random effects (PM) CI",
+    "Hartung & Knapp (REML) CI",
+    "Henmi & Copas (DL) CI"
 )
-unique(out_sum$method)
 
 out_sum <- subset(out_sum, method %in% method_order)
 
@@ -675,7 +707,7 @@ totitle <- function(string) {
 for (x in opts$meas) {
     data <- out_sum %>%
         filter(measure == x) %>%
-        group_by(k, bias, I2, method) %>%
+        group_by(k, bias, I2, method, effect, heterogeneity) %>%
         summarise(
             mean_value = mean(value),
             max_value = max(value),
@@ -683,8 +715,8 @@ for (x in opts$meas) {
             .groups = "drop"
         )
     # split methods into additive, multiplicative, and rest
-    methods <- unique(data$method)
-    add_idx <- grepl("Additive", methods, fixed = TRUE)
+    methods <- unique(data[c("method", "heterogeneity")])
+    add_idx <- data$heterogeneity == "additive"
     mult_idx <- grepl("Multiplicative", methods, fixed = TRUE)
     additive <- methods[add_idx]
     multiplicative <- methods[mult_idx]
@@ -736,7 +768,9 @@ for (x in opts$meas) {
             theme(legend.position = "bottom")
         ggsave(
             filename = paste0(
-                out_path, x, "_",
+                out_path,
+                x,
+                "_",
                 if (y == 1L) "additive" else "multiplicative",
                 ".png"
             ),
