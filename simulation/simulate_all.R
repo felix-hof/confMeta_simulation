@@ -931,7 +931,7 @@ sim2CIs <- function(x) {
     )
 
     # estimate tau2
-    tau2 <- get_tau2(
+    tau2_all <- get_tau2(
         methods = c("none", "DL", "PM", "REML"),
         thetahat = thetahat,
         se = se,
@@ -958,8 +958,9 @@ sim2CIs <- function(x) {
     # calculate [CI, gamma, estimates, p_max]
     new_methods <- setNames(
         lapply(
-            seq_along(tau2),
-            function(thetahat, se, tau2, x, control) {
+            seq_along(tau2_all),
+            function(thetahat, se, tau2_all, i, control) {
+                tau2 <- tau2_all[i]
                 # get those from new methods
                 out_ints <- get_new_intervals(
                     methods = c(
@@ -978,7 +979,7 @@ sim2CIs <- function(x) {
                     se = se,
                     # phi = phi,
                     phi = NULL,
-                    tau2 = tau2[x]
+                    tau2 = tau2
                 )
                 ints_reml <- get_ints_reml(
                     thetahat = thetahat,
@@ -987,15 +988,18 @@ sim2CIs <- function(x) {
                     control = control
                 )
                 out_ints$CI <- rbind(out_ints$CI, ints_reml$CI)
-                out_ints$estimates <- rbind(out_ints$estimates, ints_reml$estimates)
+                out_ints$estimates <- rbind(
+                    out_ints$estimates,
+                    ints_reml$estimates
+                )
                 out_ints
             },
             thetahat = thetahat,
             se = se,
-            tau2 = tau2,
+            tau2_all = tau2_all,
             control = control
         ),
-        names(tau2)
+        names(tau2_all)
     )
 
     # Assemble output
@@ -1011,7 +1015,10 @@ sim2CIs <- function(x) {
     )
     p_max <- do.call(
         "rbind",
-        append(lapply(new_methods, "[[", i = "p_max"), list(make.row.names = FALSE))
+        append(
+            lapply(new_methods, "[[", i = "p_max"),
+            list(make.row.names = FALSE)
+        )
     )
 
     list(
