@@ -877,6 +877,36 @@ get_tau2 <- function(thetahat, se, methods, control) {
     )
 }
 
+get_ints_reml <- function(thetahat, se, tau2, control) {
+    obj <- meta::metagen(
+        TE = thetahat,
+        seTE = se,
+        sm = "MD",
+        tau.preset = sqrt(tau2),
+        control = control
+    )
+    ci <- get_classic_interval(method = "reml_ci", obj = obj)
+    mt <- paste0("reml_ci_additive_", names(tau2))
+    ci_df <- data.frame(
+        lower = ci[1L],
+        upper = ci[2L],
+        method = mt,
+        ci_exists = TRUE,
+        is_ci = TRUE,
+        is_pi = FALSE,
+        is_new = FALSE,
+        stringsAsFactors = FALSE,
+        row.names = NULL
+    )
+    est_df <- data.frame(
+        estimate = ci[3L],
+        method = mt,
+        row.names = NULL,
+        stringsAsFactors = FALSE
+    )
+    list("CI" = ci_df, "estimates" = est_df)
+}
+
 #' Confidence intervals from effect estimates and their standard errors
 #'
 #' Takes the output of \code{simRE} and returns CIs for
@@ -929,8 +959,9 @@ sim2CIs <- function(x) {
     new_methods <- setNames(
         lapply(
             seq_along(tau2),
-            function(thetahat, se, tau2, x) {
-                get_new_intervals(
+            function(thetahat, se, tau2, x, control) {
+                # get those from new methods
+                out_ints <- get_new_intervals(
                     methods = c(
                         ## For the sake of naming things:
                         ## -> do NOT use underscores("_") in these
@@ -949,10 +980,20 @@ sim2CIs <- function(x) {
                     phi = NULL,
                     tau2 = tau2[x]
                 )
+                ints_reml <- get_ints_reml(
+                    thetahat = thetahat,
+                    se = se,
+                    tau2 = tau2,
+                    control = control
+                )
+                out_ints$CI <- rbind(out_ints$CI, ints_reml$CI)
+                out_ints$estimates <- rbind(out_ints$estimates, ints_reml$estimates)
+                out_ints
             },
             thetahat = thetahat,
             se = se,
-            tau2 = tau2
+            tau2 = tau2,
+            control = control
         ),
         names(tau2)
     )
