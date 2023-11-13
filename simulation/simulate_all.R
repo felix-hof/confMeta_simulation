@@ -276,8 +276,8 @@ get_classic_ci_bm <- function(obj) {
 get_classic_interval <- function(method, obj) {
     switch(
         method,
-        "hk_pi" = get_classic_pi_hk(obj = obj),      # unusable since no estimate
-        "reml_pi" = get_classic_pi_reml(obj = obj),  # unusable since no estimate
+        "hk_pi" = get_classic_pi_hk(obj = obj),     # unusable since no estimate
+        "reml_pi" = get_classic_pi_reml(obj = obj), # unusable since no estimate
         "hk_ci" = get_classic_ci_hk(obj = obj),
         "reml_ci" = get_classic_ci_reml(obj = obj),
         "hc_ci" = get_classic_ci_hc(obj = obj),
@@ -332,14 +332,32 @@ get_classic_intervals <- function(methods, thetahat, se) {
             obj = objs[[obj_codes[i]]]
         )
     }
+    # construct names for methods
+    est_method <- function(obj_codes) {
+        get1 <- function(obj_code) {
+            switch(
+                obj_code,
+                "hk" = "REML",
+                "hc" = "DL",
+                "bm" = "HN(0, 0.3)",
+            )
+        }
+        vapply(obj_codes, get1, character(1L))
+    }
+    mt <- est_method(obj_codes = obj_codes)
+    meth <- paste0(
+        methods,
+        "_additive_", # since all of these are additive
+        mt
+    )
+
     # convert this to df
     # which methods to call
     out <- data.frame(
         lower = ci[, 1L],
         upper = ci[, 2L],
         estimate = ci[, 3L],
-        method = methods,
-        tau_method = NA_character_,
+        method = meth,
         ci_exists = TRUE,
         is_ci = grepl("_ci$", methods),
         is_pi = grepl("_pi$", methods), ## no need for PIs
@@ -365,15 +383,16 @@ get_classic_intervals <- function(methods, thetahat, se) {
 
 ## list all  the p-value functions here
 get_p_value_functions <- function(methods) {
+    mt <- unique(sub("_.*$", "", methods))
     p_val_fcts <- list(
-        hMean_f = hMeanChiSqMu_f,
-        hMean_chisq = hMeanChiSqMu_chisq,
+        hMeanF = hMeanChiSqMu_f,
+        hMeanChisq = hMeanChiSqMu_chisq,
         ktrials = confMeta::p_ktrials,
         pearson = confMeta::p_pearson,
         edgington = confMeta::p_edgington,
         fisher = confMeta::p_fisher
     )
-    p_val_fcts[methods]
+    p_val_fcts[mt]
 }
 
 ## list all the argument configurations here
@@ -414,7 +433,7 @@ get_gamma_x_y <- function(gamma) {
 
 # loop over each of the function/argument combination
 ## calculate the CIs, return a data.frame
-get_new_ci_gamma <- function(thetahat, se, p_funcs, arguments) {
+get_new_ci_gamma <- function(thetahat, se, p_funcs, arguments, methods) {
 
     # Construct a grid from p-value-functions and argument
     # configurations
@@ -442,16 +461,18 @@ get_new_ci_gamma <- function(thetahat, se, p_funcs, arguments) {
     names(ci) <- nms
     # gamma <- matrix(NA_real_, ncol = 2L, nrow = l)
 
-    # store the number of rows for each method
-    ci_row <- integer(l)
-    est_row <- integer(l)
-
-    # compute CIs
+    # compute CIs and other stuff
     for (k in seq_len(l)) {
+        arg_idx <- p_arguments_idx[k]
+        f_idx <- p_funcs_idx[k]
         # make the function for current config
-        arg_list <- arguments[[p_arguments_idx[k]]]
-        f <- p_funcs[[p_funcs_idx[k]]]
+        arg_list <- arguments[[arg_idx]]
+        f <- p_funcs[[f_idx]]
         formals(f) <- modifyList(formals(f), arg_list)
+        # make names
+        function_name <- names(p_funcs)[f_idx]
+        meth <- grep(paste0(function_name, "_.*$"), methods, value = TRUE)
+        times <- length(meth)
         # compute CI
         res <- confMeta:::get_ci(
             estimates = thetahat,
@@ -459,78 +480,73 @@ get_new_ci_gamma <- function(thetahat, se, p_funcs, arguments) {
             conf_level = 0.95,
             p_fun = f
         )
-        # CI related stuff
-        ci[[k]] <- list(
-            "ci" = res$CI,
-            "est" = res$p_max[, 1L],
-            "p_max" = unique(res$p_max[, 2L]),
-            "tau_method" = if (is.null(arg_list$tau2)) {
+        mt <- paste0(
+            meth,
+            "_",
+            arg_list$heterogeneity,
+            "_",
+            if (is.null(arg_list$tau2)) {
                 NA_character_
-            }  else {
+            } else {
                 names(arg_list$tau2)
             }
         )
-        ci_row[k] <- nrow(res$CI)
-        est_row[k] <- nrow(res$p_max)
+        # CI
+        CI <- data.frame(
+            lower = rep(res$CI[, 1L], times = times),
+            upper = rep(res$CI[, 2L], times = times),
+            method = rep(mt, each = nrow(res$CI)),
+            ci_exists = rep(
+                ifelse(is.na(res$CI[, 1L]), FALSE, TRUE),
+                times = times
+            ),
+            is_ci = NA_character_,
+            is_pi = NA_character_,
+            is_new = TRUE,
+            stringsAsFactors = FALSE,
+            row.names = NULL
+        )
+        CI$is_pi <- grepl("_pi_", CI$method)
+        CI$is_ci <- grepl("_ci_", CI$method)
+        # estimates
+        es <- res$p_max[, 1L]
+        estimates <- data.frame(
+            estimate = rep(es, times = times),
+            method = rep(mt, each = length(es)),
+            stringsAsFactors = FALSE,
+            row.names = NULL
+        )
+        # p_max
+        pm <- unique(res$p_max[, 2])
+        p_max <- data.frame(
+            p_max = rep(pm, times = times),
+            method = rep(mt, each = length(pm)),
+            stringsAsFactors = FALSE,
+            row.names = NULL
+        )
+        # return list
+        ci[[k]] <- list(
+            "CI" = CI,
+            "estimates" = estimates,
+            "p_max" = p_max
+        )
         # # gamma related stuff
         # gamma[k, ] <- get_gamma_x_y(res$gamma)
     }
 
     # rbind all of the list elements
-    ci_mat <- do.call("rbind", lapply(ci, "[[", i = "ci"))
-    est_vec <- do.call("c", lapply(ci, "[[", i = "est"))
-    pmax_vec <- do.call("c", lapply(ci, "[[", i = "p_max"))
-    tm <- do.call("c", lapply(ci, "[[", i = "tau_method"))
-    tau_method_ci <- rep2(
-        tm,
-        each = do.call("c", lapply(ci, function(x) nrow(x$ci)))
-    )
-    tau_method_est <- rep2(
-        tm,
-        each = do.call("c", lapply(ci, function(x) length(x$est)))
-    )
-    tau_method_pmax <- rep2(
-        tm,
-        each = do.call("c", lapply(ci, function(x) length(x$p_max)))
+    out <- lapply(
+        c("CI" = "CI", "estimates" = "estimates", "p_max" = "p_max"),
+        function(ci, df) {
+            do.call(
+                "rbind",
+                append(lapply(ci, "[[", i = df), list(make.row.names = FALSE))
+            )
+        },
+        ci = ci
     )
 
-    # return the data.frame
-    list(
-        CI = data.frame(
-            lower = ci_mat[, 1L],
-            upper = ci_mat[, 2L],
-            method = rep2(names(ci), each = ci_row),
-            tau_method = tau_method_ci,
-            ci_exists = ifelse(is.na(ci_mat[, 1L]), FALSE, TRUE),
-            is_ci = TRUE,
-            is_pi = FALSE,
-            is_new = TRUE,
-            stringsAsFactors = FALSE,
-            row.names = NULL
-        ),
-        # gamma = data.frame(
-        #     gamma_min = gamma[, 2L],
-        #     x_gamma_min = gamma[, 1L],
-        #     method = nms,
-        #     tau_method = tm,
-        #     stringsAsFactors = FALSE,
-        #     row.names = NULL
-        # ),
-        estimates = data.frame(
-            estimate = est_vec,
-            method = rep2(names(ci), each = est_row),
-            tau_method = tau_method_est,
-            stringsAsFactors = FALSE,
-            row.names = NULL
-        ),
-        p_max = data.frame(
-            p_max = pmax_vec,
-            method = nms,
-            tau_method = tau_method_pmax,
-            stringsAsFactors = FALSE,
-            row.names = NULL
-        )
-    )
+    out
 }
 
 ## This function is the main function we use in order to
@@ -553,7 +569,8 @@ get_new_intervals <- function(
         thetahat = thetahat,
         se = se,
         p_funcs = p_funcs,
-        arguments = arguments
+        arguments = arguments,
+        methods = methods
     )
 }
 
@@ -879,7 +896,8 @@ sim2CIs <- function(x) {
 
     control <- list(
         stepadj = 0.25,
-        maxiter = 1e4
+        maxiter = 1e4,
+        tau2.max = 1e4
     )
 
     # estimate tau2
@@ -914,12 +932,16 @@ sim2CIs <- function(x) {
             function(thetahat, se, tau2, x) {
                 get_new_intervals(
                     methods = c(
-                        # "hMean_f",
-                        # "hMean_chisq",
-                        # "ktrials",
-                        # "pearson",
-                        "edgington",
-                        "fisher"
+                        ## For the sake of naming things:
+                        ## -> do NOT use underscores("_") in these
+                        ##    names here!
+
+                        # "hMeanF_ci",
+                        # "hMeanChisq_ci",
+                        # "ktrials_ci",
+                        # "pearson_ci",
+                        "edgington_ci",
+                        "fisher_ci"
                     ),
                     thetahat = thetahat,
                     se = se,
@@ -942,12 +964,14 @@ sim2CIs <- function(x) {
         make.row.names = FALSE
     )
     estimates <- rbind(
-        subset(classic_methods, select = c(estimate, method, tau_method)),
+        subset(classic_methods, select = c(estimate, method)),
         do.call("rbind", lapply(new_methods, "[[", i = "estimates")),
         make.row.names = FALSE
     )
-    p_max <- do.call("rbind", lapply(new_methods, "[[", i = "p_max"))
-    rownames(p_max) <- NULL
+    p_max <- do.call(
+        "rbind",
+        append(lapply(new_methods, "[[", i = "p_max"), list(make.row.names = FALSE))
+    )
 
     list(
         CIs = CIs,
@@ -1257,18 +1281,9 @@ get_measures <- function(is_ci, is_pi, is_new) {
 #' \item{\code{n}}{Number of intervals}
 CI2measures <- function(x, pars) {
 
-    # Construct a new method_id (since this is now composed of
-    # combination method and tau_method)
-    df_list <- lapply(
-        c("CIs" = "CIs", "estimates" = "estimates", "p_max" = "p_max"),
-        function(x, type) {
-            within(x[[type]], method_id <- paste0(method, "_", tau_method))
-        },
-        x = x
-    )
     # get the method corresponding to each row of the CIs
-    ci_df <- df_list$CIs
-    ci_method <- ci_df$method_id
+    ci_df <- x$CIs
+    ci_method <- ci_df$method
     # get the indices of unique methods and their names
     unique_methods_idx <- !duplicated(ci_method)
     unique_methods <- ci_method[unique_methods_idx]
@@ -1284,11 +1299,11 @@ CI2measures <- function(x, pars) {
     # gamma_methods <- x$gamma$method
     # gamma <- as.matrix(x$gamma[c("gamma_min", "x_gamma_min")])
     # get p_max
-    p_max <- df_list$p_max$p_max
-    p_max_method <- df_list$p_max$method_id
+    p_max <- x$p_max$p_max
+    p_max_method <- x$p_max$method
     # get estimates
-    estimates <- df_list$estimates$estimate
-    estimates_method <- df_list$estimates$method_id
+    estimates <- x$estimates$estimate
+    estimates_method <- x$estimates$method
     # get the deltas
     delta <- x$delta
     # get the effect
@@ -1657,8 +1672,8 @@ grid <- expand.grid(
 
 ## run simulation, e.g., on the Rambo server of I-MATH
 start <- Sys.time()
-out <- sim(grid = grid, N = 1e3, cores = 120)
-# out <- sim(grid = grid[688:703, ], N = 2, cores = 15)
+# out <- sim(grid = grid, N = 1e3, cores = 120)
+out <- sim(grid = grid[688:703, ], N = 2, cores = 15)
 end <- Sys.time()
 print(end - start)
 
