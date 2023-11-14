@@ -1,8 +1,8 @@
 .DS_Store
 .Rhistory
-error.rds
-error.txt
-pars.rds
+# error.rds
+# error.txt
+# pars.rds
 simulation/figs/
 simulation/functions2.R
 papers/Held_2020a.pdf
