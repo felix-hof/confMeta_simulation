@@ -1201,6 +1201,15 @@ calc_sq_diff <- function(estimates, effect) {
     }
 }
 
+# if there is only one estimate, returns it, otherwise returns NA
+calc_estimate <- function(estimates) {
+    if (length(estimates) != 1L) {
+        NA_real_
+    } else {
+        estimates
+    }
+}
+
 # based on the current method, what measures do we need to calculate
 get_measures <- function(is_ci, is_pi, is_new) {
 
@@ -1271,6 +1280,11 @@ get_measures <- function(is_ci, is_pi, is_new) {
                 estimates = estimates,
                 effect = effect
             )
+        }),
+        estimate = quote({
+            calc_estimate(
+                estimates = estimates
+            )
         })
     )
 
@@ -1285,7 +1299,8 @@ get_measures <- function(is_ci, is_pi, is_new) {
             # "coverage_effects_all",
             "width",
             "score",
-            "mse"
+            "mse",
+            "estimate"
         )
         counter <- counter + 1L
     }
@@ -1447,7 +1462,7 @@ calc_measures <- function(x, pars, i) {
 # Calculate the mean measure for each of the method and measure subgroups
 get_mean_stats <- function(df) {
     # Summarise all the measures except gamma_min & p_max
-    df_sub <- subset(df, !(measure %in% c("gamma_min", "p_max")))
+    df_sub <- subset(df, !(measure %in% c("gamma_min", "p_max", "estimate")))
     mean_stats <- stats::aggregate(
         value ~ measure + method + is_ci + is_pi + is_new,
         FUN = mean,
@@ -1520,7 +1535,7 @@ get_n_stats <- function(df) {
     df_sub <- subset(df, measure == "n")
     n_stats <- lapply(
         seq_along(f_list_n),
-        function(i) {
+        function(i, f_list_n, df_sub) {
             res <- stats::aggregate(
                 value ~ measure + method + is_ci + is_pi + is_new,
                 FUN = f_list_n[[i]],
@@ -1529,23 +1544,57 @@ get_n_stats <- function(df) {
             res$usage <- "n_plot"
             res$stat_fun <- names(f_list_n)[i]
             res
-        }
+        },
+        f_list_n = f_list_n,
+        df_sub = df_sub
     )
     n_stats <- do.call("rbind", n_stats)
     n_stats
 }
 
+
+get_bias_var_stats <- function(df, mse) {
+    df_sub <- subset(df, measure == "estimate")
+    res <- stats::aggregate(
+        value ~ measure + method + is_ci + is_pi + is_new,
+        FUN = var,
+        data = df_sub
+    )
+    out <- merge(
+        mse[c("measure", "method", "is_ci", "is_pi", "is_new", "value")],
+        res[c("method", "value")],
+        sort = FALSE,
+        by = "method"
+    )
+
+
+    merge(
+
+    )
+}
+
 # This is a wrapper function that calls all of the other
 # functions above.
 get_summary_measures <- function(df, pars) {
+    # Get all of the statistics
+    mean_stats <- get_mean_stats(df = df)
+    gamma_stats <- get_gamma_stats(df = df)
+    n_stats <- get_n_stats(df = df)
+    bias_var_stats <- get_bias_var_stats(
+        df = df,
+        mse = subset(mean_stats, measure == "mse")
+    )
+
     res <- rbind(
-        get_mean_stats(df = df),
-        get_gamma_stats(df = df),
-        get_n_stats(df = df)
+        mean_stats,
+        gamma_stats,
+        n_stats,
+        bias_var_stats
     )
     p <- as.data.frame(lapply(pars, rep, times = nrow(res)))
     cbind(p, res)
 }
+
 
 ## Add another wrapper that handles possible errors
 calc_summary_measures <- function(df, pars, i) {
@@ -1702,7 +1751,7 @@ grid <- expand.grid(
     # sample size of trial
     sampleSize = 50,
     # average effect, impacts selection bias
-    effect = c(0.2, 0.5),
+    effect = c(0.1, 0.2, 0.5),
     # Higgin's I^2 heterogeneity measure
     I2 = c(0, 0.3, 0.6, 0.9),
     # number of studies
