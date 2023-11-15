@@ -1553,25 +1553,49 @@ get_n_stats <- function(df) {
 }
 
 
-get_bias_var_stats <- function(df, mse) {
-    df_sub <- subset(df, measure == "estimate")
-    res <- stats::aggregate(
-        value ~ measure + method + is_ci + is_pi + is_new,
-        FUN = var,
-        data = df_sub
-    )
-    out <- merge(
-        mse[c("measure", "method", "is_ci", "is_pi", "is_new", "value")],
-        res[c("method", "value")],
-        sort = FALSE,
-        by = "method"
-    )
-
-
-    merge(
-
-    )
-}
+# get_bias_var_stats <- function(df, mse) {
+#     # # get number of iterations (what about NAs?) and true effect
+#     # N <- attributes(df)$N
+#     effect <- attributes(df)$effect
+#     # functions to calculate mean and variance removing NAs
+#     # subset mse columns
+#     mse <- mse[c("method", "value")]
+#     names(mse)[2L] <- "mse"
+#     # subset to only keep the estimates
+#     df_sub <- subset(df, measure == "estimate")
+#     funs <- list(
+#         mean = function(x) mean(x, na.rm = TRUE),
+#         var = function(x) var(x, na.rm = TRUE)
+#     )
+#     out <- lapply(
+#         seq_along(funs),
+#         function(x, funs, df_sub) {
+#             is_first <- x == 1L
+#             formula <- if (is_first) {
+#                 value ~ measure + method + is_ci + is_pi + is_new
+#             } else {
+#                 value ~ method
+#             }
+#             res <- stats::aggregate(
+#                 formula,
+#                 FUN = funs[[x]],
+#                 data = df_sub
+#             )
+#             val_col <- names(res) == "value"
+#             names(res)[val_col] <- names(funs)[x]
+#             res
+#         },
+#         df_sub = df_sub,
+#         funs = funs
+#     )
+#     out <- append(out, list("mse" = mse))
+#     out <- Reduce(
+#         function(x, y) merge(x, y, by = "method", all = TRUE, sort = FALSE),
+#         out
+#     )
+#     out$bias <- out$mean - effect
+#     out
+# }
 
 # This is a wrapper function that calls all of the other
 # functions above.
@@ -1725,6 +1749,8 @@ sim <- function(
             } else {
                 # rbind data frames in list `av`
                 df <- do.call("rbind", av)
+                attr(df, "N") <- N
+                attr(df, "effect") <- pars$effect
                 # calculate the summary measures
                 out <- calc_summary_measures(df = df, pars = pars, i = i)
             }
