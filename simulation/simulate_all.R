@@ -38,52 +38,53 @@ blas_set_num_threads(1) # multi threading of BLAS
 ################################################################################
 
 
-# Helper function to convert the id_strings into proper names
-# This function is used in:
-# - get_new_intervals
-make_name <- function(id_strings) {
-    str <- strsplit(id_strings, split = "_")
-    nms <- vapply(
-        str,
-        function(x) {
-            method <- switch(
-                x[1L],
-                "hMean" = "Harmonic Mean",
-                "ktrials" = "k-Trials",
-                "pearson" = "Pearson",
-                "edgington" = "Edgington",
-                "fisher" = "Fisher"
-            )
-            het <- switch(
-                x[length(x)],
-                "none" = "",
-                "additive" = "Additive",
-                "multiplicative" = "Multiplicative"
-            )
-            distr <- if (length(x) == 3L) {
-                switch(
-                    x[2L],
-                    "f" = "(f)",
-                    "chisq" = "(chisq)"
-                )
-            } else {
-                NA_character_
-            }
-            out <- paste(
-                method, het, "CI"
-            )
-            if (!is.na(distr)) out <- paste(out, distr)
-            out
-        },
-        character(1L)
-    )
-    gsub("\\s+", " ", nms)
-}
+# # Helper function to convert the id_strings into proper names
+# # This function is used in:
+# # - get_new_intervals
+# make_name <- function(id_strings) {
+#     str <- strsplit(id_strings, split = "_")
+#     nms <- vapply(
+#         str,
+#         function(x) {
+#             method <- switch(
+#                 x[1L],
+#                 "hMean" = "Harmonic Mean",
+#                 "ktrials" = "k-Trials",
+#                 "pearson" = "Pearson",
+#                 "edgington" = "Edgington",
+#                 "fisher" = "Fisher"
+#             )
+#             het <- switch(
+#                 x[length(x)],
+#                 "none" = "",
+#                 "additive" = "Additive",
+#                 "multiplicative" = "Multiplicative"
+#             )
+#             distr <- if (length(x) == 3L) {
+#                 switch(
+#                     x[2L],
+#                     "f" = "(f)",
+#                     "chisq" = "(chisq)"
+#                 )
+#             } else {
+#                 NA_character_
+#             }
+#             out <- paste(
+#                 method, het, "CI"
+#             )
+#             if (!is.na(distr)) out <- paste(out, distr)
+#             out
+#         },
+#         character(1L)
+#     )
+#     gsub("\\s+", " ", nms)
+# }
 
 ## This function repeats each element of `x` exactly `each`
 ## times. However, in contrast to the regular `rep()` function
 ## `each` can also be vector of the same length as 'x'.
 ## repeat each element of `x` `each` times
+## rep2(c("a", "b", "c"), c(1, 2, 3)) --> c("a", "b", "b", "c", "c", "c")
 rep2 <- function(x, each) {
     do.call(
         "c",
@@ -94,7 +95,8 @@ rep2 <- function(x, each) {
 ## This function is only used in tryCatch() blocks in case of an error.
 ## The function writes the name of the function that errored, the error
 ## message, and the parameters to a file on disk. It also saves an object
-## to disk containing the function inputs.
+## to disk containing the function inputs. It is mainly intended for
+## collecting logs in case of errors
 ## This function is used in:
 ## - sim_effects
 error_function <- function(cond, pars, error_obj = NULL, fun_name, i) {
@@ -114,7 +116,7 @@ error_function <- function(cond, pars, error_obj = NULL, fun_name, i) {
         },
         "\n\n\n",
         "---------------------------------------------------------------------",
-        "-----------"
+        "-----------\n\n\n"
     )
     cat(out_msg, file = "error.txt", append = TRUE)
     saveRDS(pars, file = "pars.rds")
@@ -260,9 +262,9 @@ get_classic_ci_reml <- get_classic_ci_hk <- function(obj) {
     )
 }
 ## extract lower and upper bound for Hartung-Knapp and REML PI
-# get_classic_pi_reml <- get_classic_pi_hk <- function(obj) {
-#     with(obj, c(lower.predict, upper.predict))
-# }
+get_classic_pi_reml <- get_classic_pi_hk <- function(obj) {
+    with(obj, c(lower.predict, upper.predict))
+}
 ## extract lower and upper bound for Henmi & Copas CI
 get_classic_ci_hc <- function(obj) {
     setNames(with(obj, c(ci.lb, ci.ub, beta)), c("lower", "upper", "estimate"))
@@ -794,6 +796,7 @@ simREbias <- function(
         keep2 <- rbinom(n = k * 3, size = 1, p = pa2)
         o <- rbind(o, o2)
         keep <- c(keep, keep2)
+        pa <- c(pa, pa2)
     }
     o <- o[as.logical(keep), ][1:k, ]
 
@@ -809,6 +812,7 @@ simREbias <- function(
     ## add attributes and return
     attr(o, which = "heterogeneity") <- heterogeneity
     attr(o, which = "effect") <- effect
+    attr(o, which = "p_accept") <- mean(pa)
     o
 }
 
@@ -1299,7 +1303,7 @@ get_measures <- function(is_ci, is_pi, is_new) {
             # "coverage_effects_all",
             "width",
             "score",
-            "mse",
+            # "mse",
             "estimate"
         )
         counter <- counter + 1L
@@ -1462,7 +1466,10 @@ calc_measures <- function(x, pars, i) {
 # Calculate the mean measure for each of the method and measure subgroups
 get_mean_stats <- function(df) {
     # Summarise all the measures except gamma_min & p_max
-    df_sub <- subset(df, !(measure %in% c("gamma_min", "p_max", "estimate")))
+    df_sub <- subset(
+        df,
+        !(measure %in% c("gamma_min", "p_max", "mse", "estimate"))
+    )
     mean_stats <- stats::aggregate(
         value ~ measure + method + is_ci + is_pi + is_new,
         FUN = mean,
@@ -1474,7 +1481,7 @@ get_mean_stats <- function(df) {
 }
 
 # Calculate the summary measures for gamma_min
-get_gamma_stats <- function(df) {
+get_gamma_stats <- function(df, col_order) {
     # Run all the functions of f_list_gamma
     # To the correct subset of df and add
     # some information regarding stat and
@@ -1530,7 +1537,7 @@ make_f_n <- function(n) {
     f_n
 }
 
-get_n_stats <- function(df) {
+get_n_stats <- function(df, col_order) {
     f_list_n <- make_f_n(0:9)
     df_sub <- subset(df, measure == "n")
     n_stats <- lapply(
@@ -1549,65 +1556,70 @@ get_n_stats <- function(df) {
         df_sub = df_sub
     )
     n_stats <- do.call("rbind", n_stats)
-    n_stats
+    n_stats[col_order]
 }
 
+get_bias_var_stats <- function(df, col_order) {
+    # get the effect
+    effect <- attributes(df)$effect
+    # store the method specific info
+    df_sub_rest <- unique(subset(df, select = -c(measure, value)))
+    # get the point estimates for all methods and convert to factor
+    df_sub_est <- subset(df, measure == "estimate", select = c(method, value))
+    df_sub_est$method <- factor(df_sub_est$method)
+    # Calculate the bias, i.e. mean_estimate - true_effect
+    mean_est <- stats::aggregate(
+        value ~ method,
+        FUN = function(x) mean(x, na.rm = TRUE),
+        data = df_sub_est
+    )
+    bias <- within(mean_est, value <- abs(value - effect))
+    # Calculate variance, i.e. var(estimates)
+    var_est <- stats::aggregate(
+        value ~ method,
+        FUN = function(x) var(x, na.rm = TRUE),
+        data = df_sub_est
+    )
+    # Calculate MSE, i.e. (1/n) * sum((estimate - true_effect)^2)
+    mse_est <- stats::aggregate(
+        value ~ method,
+        FUN = function(x, effect) {
+            mean((x - effect)^2, na.rm = TRUE)
+        },
+        data = df_sub_est,
+        effect = effect
+    )
+    # Check
+    ll <- list("bias" = bias, "var" = var_est, "mse" = mse_est)
+    do.call(
+        "rbind",
+        lapply(
+            X = seq_along(ll),
+            FUN = function(i, ll, df_sub_rest, col_order) {
+                nm <- names(ll)[i]
+                d <- cbind(data.frame(measure = nm), df_sub_rest)
+                out <- merge(d, ll[[i]], by = "method", sort = FALSE)
+                out$usage <- "mean_plot"
+                out$stat_fun <- nm
+                out[col_order]
+            },
+            ll = ll,
+            df_sub_rest = df_sub_rest,
+            col_order = col_order
+        )
+    )
+}
 
-# get_bias_var_stats <- function(df, mse) {
-#     # # get number of iterations (what about NAs?) and true effect
-#     # N <- attributes(df)$N
-#     effect <- attributes(df)$effect
-#     # functions to calculate mean and variance removing NAs
-#     # subset mse columns
-#     mse <- mse[c("method", "value")]
-#     names(mse)[2L] <- "mse"
-#     # subset to only keep the estimates
-#     df_sub <- subset(df, measure == "estimate")
-#     funs <- list(
-#         mean = function(x) mean(x, na.rm = TRUE),
-#         var = function(x) var(x, na.rm = TRUE)
-#     )
-#     out <- lapply(
-#         seq_along(funs),
-#         function(x, funs, df_sub) {
-#             is_first <- x == 1L
-#             formula <- if (is_first) {
-#                 value ~ measure + method + is_ci + is_pi + is_new
-#             } else {
-#                 value ~ method
-#             }
-#             res <- stats::aggregate(
-#                 formula,
-#                 FUN = funs[[x]],
-#                 data = df_sub
-#             )
-#             val_col <- names(res) == "value"
-#             names(res)[val_col] <- names(funs)[x]
-#             res
-#         },
-#         df_sub = df_sub,
-#         funs = funs
-#     )
-#     out <- append(out, list("mse" = mse))
-#     out <- Reduce(
-#         function(x, y) merge(x, y, by = "method", all = TRUE, sort = FALSE),
-#         out
-#     )
-#     out$bias <- out$mean - effect
-#     out
-# }
 
 # This is a wrapper function that calls all of the other
 # functions above.
 get_summary_measures <- function(df, pars) {
     # Get all of the statistics
     mean_stats <- get_mean_stats(df = df)
-    gamma_stats <- get_gamma_stats(df = df)
-    n_stats <- get_n_stats(df = df)
-    bias_var_stats <- get_bias_var_stats(
-        df = df,
-        mse = subset(mean_stats, measure == "mse")
-    )
+    col_order <- names(mean_stats)
+    gamma_stats <- get_gamma_stats(df = df, col_order = col_order)
+    n_stats <- get_n_stats(df = df, col_order = col_order)
+    bias_var_stats <- get_bias_var_stats(df = df, col_order = col_order)
 
     res <- rbind(
         mean_stats,
@@ -1734,10 +1746,12 @@ sim <- function(
             # av is a list with elements that are either a tibble or NA
             # (the latter in case of an error)
             av <- vector("list", length = N)
+            p_accept <- vector("numeric", length = N)
             for (i in seq_len(N)) {
                 # Repeat this N times. Simulate studies, calculate CIs,
                 # calculate measures
                 res <- sim_effects(pars = pars, i = i)
+                p_accept[i] <- attributes(res)$p_accept
                 CIs <- calc_ci(x = res, pars = pars, i = i)
                 av[[i]] <- calc_measures(x = CIs, pars = pars, i = i)
             }
@@ -1752,15 +1766,36 @@ sim <- function(
                 attr(df, "N") <- N
                 attr(df, "effect") <- pars$effect
                 # calculate the summary measures
-                out <- calc_summary_measures(df = df, pars = pars, i = i)
+                ci_meas <- calc_summary_measures(
+                    df = df,
+                    pars = pars,
+                    i = i
+                )
+                out <- rbind(
+                    ci_meas,
+                    cbind(
+                        pars,
+                        data.frame(
+                            measure = "p_accept",
+                            method = "none",
+                            is_ci = FALSE,
+                            is_pi = FALSE,
+                            is_new = FALSE,
+                            value = mean(p_accept),
+                            usage = "paccept_plot",
+                            stat_fun = "mean",
+                            stringsAsFactors = FALSE
+                        )
+                    )
+                )
             }
         }
         # return output
         out
     }
 
-    # rbind lists together
-    o <- do.call("rbind", o)
+    # rbind ci_meas lists together
+    ci_meas <- do.call("rbind", ci_meas)
 
     # set some attributes and return
     attr(o, "seed") <- seed
