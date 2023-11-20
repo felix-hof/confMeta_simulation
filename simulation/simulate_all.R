@@ -1794,8 +1794,8 @@ sim <- function(
         out
     }
 
-    # rbind ci_meas lists together
-    ci_meas <- do.call("rbind", ci_meas)
+    # # rbind ci_meas lists together
+    # ci_meas <- do.call("rbind", ci_meas)
 
     # set some attributes and return
     attr(o, "seed") <- seed
