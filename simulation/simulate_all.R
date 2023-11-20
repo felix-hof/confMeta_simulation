@@ -1830,7 +1830,7 @@ grid <- expand.grid(
 
 ## run simulation, e.g., on the Rambo server of I-MATH
 start <- Sys.time()
-out <- sim(grid = grid, N = 1e4, cores = 120)
+out <- sim(grid = grid, N = 5e3, cores = 120)
 # out <- sim(grid = grid[688:703, ], N = 2, cores = 15)
 end <- Sys.time()
 print(end - start)
