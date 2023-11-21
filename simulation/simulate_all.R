@@ -1611,22 +1611,43 @@ get_bias_var_stats <- function(df, col_order) {
     )
 }
 
+get_paccept_stats <- function(p_accept, col_order) {
+    data.frame(
+        measure = "p_accept",
+        method = "none",
+        is_ci = FALSE,
+        is_pi = FALSE,
+        is_new = FALSE,
+        value = mean(p_accept),
+        usage = "paccept_plot",
+        stat_fun = "mean",
+        stringsAsFactors = FALSE,
+        row.names = NULL
+    )[col_order]
+}
+
 
 # This is a wrapper function that calls all of the other
 # functions above.
-get_summary_measures <- function(df, pars) {
+get_summary_measures <- function(df, p_accept, pars) {
     # Get all of the statistics
     mean_stats <- get_mean_stats(df = df)
     col_order <- names(mean_stats)
     gamma_stats <- get_gamma_stats(df = df, col_order = col_order)
     n_stats <- get_n_stats(df = df, col_order = col_order)
     bias_var_stats <- get_bias_var_stats(df = df, col_order = col_order)
+    p_accept_stats <- get_paccept_stats(
+        p_accept = p_accept,
+        col_order = col_order
+    )
 
     res <- rbind(
         mean_stats,
         gamma_stats,
         n_stats,
-        bias_var_stats
+        bias_var_stats,
+        p_accept_stats,
+        make.row.names = FALSE
     )
     p <- as.data.frame(lapply(pars, rep, times = nrow(res)))
     cbind(p, res)
@@ -1634,9 +1655,9 @@ get_summary_measures <- function(df, pars) {
 
 
 ## Add another wrapper that handles possible errors
-calc_summary_measures <- function(df, pars, i) {
+calc_summary_measures <- function(df, p_accept, pars, i) {
     tryCatch({
-        get_summary_measures(df = df, pars = pars)
+        get_summary_measures(df = df, p_accept = p_accept, pars = pars)
     },
     error = function(cond) {
         error_function(
@@ -1741,7 +1762,7 @@ sim <- function(
             # if error happened, skip the rest of the loop iterations
             out <- "skipped"
         } else {
-            cat("start", j, "of", nrow(grid), fill = TRUE)
+            # cat("start", j, "of", nrow(grid), fill = TRUE)
             pars <- grid[j, ]
 
             # av is a list with elements that are either a tibble or NA
@@ -1749,6 +1770,7 @@ sim <- function(
             av <- vector("list", length = N)
             p_accept <- vector("numeric", length = N)
             for (i in seq_len(N)) {
+                system(paste0("printf 'j=", j, ", i=", i, "\n'"))
                 # Repeat this N times. Simulate studies, calculate CIs,
                 # calculate measures
                 res <- sim_effects(pars = pars, i = i)
@@ -1767,28 +1789,13 @@ sim <- function(
                 attr(df, "N") <- N
                 attr(df, "effect") <- pars$effect
                 # calculate the summary measures
-                ci_meas <- calc_summary_measures(
+                out <- calc_summary_measures(
                     df = df,
+                    p_accept = p_accept,
                     pars = pars,
                     i = i
                 )
-                out <- rbind(
-                    ci_meas,
-                    cbind(
-                        pars,
-                        data.frame(
-                            measure = "p_accept",
-                            method = "none",
-                            is_ci = FALSE,
-                            is_pi = FALSE,
-                            is_new = FALSE,
-                            value = mean(p_accept),
-                            usage = "paccept_plot",
-                            stat_fun = "mean",
-                            stringsAsFactors = FALSE
-                        )
-                    )
-                )
+                out
             }
         }
         # return output
@@ -1796,7 +1803,7 @@ sim <- function(
     }
 
     # # rbind ci_meas lists together
-    # ci_meas <- do.call("rbind", ci_meas)
+    o <- do.call("rbind", o)
 
     # set some attributes and return
     attr(o, "seed") <- seed
@@ -1829,10 +1836,13 @@ grid <- expand.grid(
     stringsAsFactors = FALSE
 )
 
+# For testing
+# grid <- grid[floor(seq(1, 1080, length.out = 15)), ]
+
 ## run simulation, e.g., on the Rambo server of I-MATH
 start <- Sys.time()
-out <- sim(grid = grid, N = 1e3, cores = 120)
-# out <- sim(grid = grid[688:703, ], N = 2, cores = 15)
+out <- sim(grid = grid, N = 1e4, cores = 120)
+# out <- sim(grid = grid, N = 2, cores = 15)
 end <- Sys.time()
 print(end - start)
 
