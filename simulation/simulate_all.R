@@ -776,6 +776,7 @@ simREbias <- function(
         ## add attributes and return
         attr(o, "heterogeneity") <- heterogeneity
         attr(o, which = "effect") <- effect
+        attr(o, which = "p_accept") <- 1
         return(o)
     }
 
