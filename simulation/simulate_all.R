@@ -37,49 +37,6 @@ blas_set_num_threads(1) # multi threading of BLAS
 #                              Helper functions                                #
 ################################################################################
 
-
-# # Helper function to convert the id_strings into proper names
-# # This function is used in:
-# # - get_new_intervals
-# make_name <- function(id_strings) {
-#     str <- strsplit(id_strings, split = "_")
-#     nms <- vapply(
-#         str,
-#         function(x) {
-#             method <- switch(
-#                 x[1L],
-#                 "hMean" = "Harmonic Mean",
-#                 "ktrials" = "k-Trials",
-#                 "pearson" = "Pearson",
-#                 "edgington" = "Edgington",
-#                 "fisher" = "Fisher"
-#             )
-#             het <- switch(
-#                 x[length(x)],
-#                 "none" = "",
-#                 "additive" = "Additive",
-#                 "multiplicative" = "Multiplicative"
-#             )
-#             distr <- if (length(x) == 3L) {
-#                 switch(
-#                     x[2L],
-#                     "f" = "(f)",
-#                     "chisq" = "(chisq)"
-#                 )
-#             } else {
-#                 NA_character_
-#             }
-#             out <- paste(
-#                 method, het, "CI"
-#             )
-#             if (!is.na(distr)) out <- paste(out, distr)
-#             out
-#         },
-#         character(1L)
-#     )
-#     gsub("\\s+", " ", nms)
-# }
-
 ## This function repeats each element of `x` exactly `each`
 ## times. However, in contrast to the regular `rep()` function
 ## `each` can also be vector of the same length as 'x'.
@@ -124,10 +81,10 @@ error_function <- function(cond, pars, error_obj = NULL, fun_name, i) {
     return(NA)
 }
 
-## These functions just call hMeanChiSqMu under the hood but fix the argument
+## These functions just call p_hmean under the hood but fix the argument
 ## `distr` to be either `"f"` or `"chisq"`. This is useful because we do not
 ## actually need to worry about including `distr = "f"` in the `args` argument
-## when constructing expressions of the form `do.call("hMeanChiSqMu", args)`.
+## when constructing expressions of the form `do.call("p_hmean", args)`.
 ## These functions are used in:
 ## - sim2CIs
 hMeanChiSqMu_f <- function(
@@ -183,8 +140,8 @@ hMeanChiSqMu_chisq <- function(
 ## The following functions are used to fit a model to some individual studies
 ## and then extract the estimate and CIs. The idea is to make a function of the
 ## method, the individual studies, and their SEs. Then we can simply use this
-## and pass only what we really need. Most of these function function are only
-## used within the main function called get_classic_intervals(). Thus, these
+## and pass only what we really need. Most of these functions are only
+## used within the main function called `get_classic_intervals()`. Thus, these
 ## functions contain the logic that ultimately return a data.frame with columns
 ## `lower`, `upper`, `method`, `ci_exists`.
 ## This main function is used in:
@@ -296,8 +253,9 @@ get_classic_interval <- function(method, obj) {
 get_classic_intervals <- function(methods, thetahat, se) {
     # set control options
     control <- list(maxiter = 1e4, stepadj = 0.25)
-    # hash tables for methods2obj and methods2int
+    # mappings for method codes to object codes
     # as some methods use the same objects
+    # (prediction & confidence intervals are in the same object)
     meth2obj_code <- c(
         "hc_ci" = "hc",
         "reml_ci" = "reml",
@@ -306,14 +264,6 @@ get_classic_intervals <- function(methods, thetahat, se) {
         "hk_pi" = "hk",
         "bm_ci" = "bm"
     )
-    # meth2name <- c(
-    #     "hc_ci" = "Henmi & Copas CI",
-    #     "reml_ci" = "REML CI",
-    #     "reml_pi" = "REML PI",
-    #     "hk_ci" = "Hartung & Knapp CI",
-    #     "hk_pi" = "Hartung & Knapp PI",
-    #     "bm_ci" = "Bayesmeta CI"
-    # )
     # which objects to fit
     obj_codes <- meth2obj_code[methods]
     obj_fit <- unique(obj_codes)
@@ -326,7 +276,7 @@ get_classic_intervals <- function(methods, thetahat, se) {
         control = control
     )
     names(objs) <- obj_fit
-    # get the CIs
+    # get the CIs/PIs
     ci <- matrix(NA_real_, nrow = length(methods), ncol = 3L)
     for (i in seq_along(methods)) {
         ci[i, ] <- get_classic_interval(
@@ -354,7 +304,6 @@ get_classic_intervals <- function(methods, thetahat, se) {
     )
 
     # convert this to df
-    # which methods to call
     out <- data.frame(
         lower = ci[, 1L],
         upper = ci[, 2L],
@@ -362,16 +311,11 @@ get_classic_intervals <- function(methods, thetahat, se) {
         method = meth,
         ci_exists = TRUE,
         is_ci = grepl("_ci$", methods),
-        is_pi = grepl("_pi$", methods), ## no need for PIs
+        is_pi = grepl("_pi$", methods), ## not used anymore
         is_new = FALSE,
         stringsAsFactors = FALSE,
         row.names = NULL
     )
-    # attach attribute tau2
-    # if ("reml" %in% obj_codes) {
-    #     attr(out, which = "tau2") <- objs$reml$tau2
-    # }
-    # return
     out
 }
 
@@ -1471,6 +1415,7 @@ get_mean_stats <- function(df) {
         df,
         !(measure %in% c("gamma_min", "p_max", "mse", "estimate"))
     )
+    # This works since mean of a vector of all NAs is just NA
     mean_stats <- stats::aggregate(
         value ~ measure + method + is_ci + is_pi + is_new,
         FUN = mean,
@@ -1488,6 +1433,7 @@ get_gamma_stats <- function(df, col_order) {
     # some information regarding stat and
     # usage
     df_sub <- subset(df, measure %in% c("gamma_min", "p_max"))
+    # list of functions that calculate the desired summary measures
     f_list_gamma <- list(
         min = min,
         firstQuart = function(x) {
@@ -1500,6 +1446,7 @@ get_gamma_stats <- function(df, col_order) {
         },
         max = max
     )
+    # loop over the functions and calculate the summary measures
     gamma_stats <- lapply(
         seq_along(f_list_gamma),
         function(i) {
@@ -1518,13 +1465,14 @@ get_gamma_stats <- function(df, col_order) {
 }
 
 # Calculate the summary measures for n
+# We want to count the number of intervals:
+# This function generates a list of functions
+# that check how many times the number of
+# intervals is equal to n. Here, n is vectorised
+# and there is also a function that counts the number
+# of times where the number of intervals exceeds
+# max(n).
 make_f_n <- function(n) {
-    # This function generates a list of functions
-    # that check how many times the number of
-    # intervals is equal to n. Here, n is vectorised
-    # and there is also a function that counts the number
-    # of times where the number of intervals exceeds
-    # max(n).
     maxn <- max(n)
     f_n <- lapply(
         n,
@@ -1538,9 +1486,14 @@ make_f_n <- function(n) {
     f_n
 }
 
+# Count how many times the number of intervals is equal to n,
+# where n is the same as the input to `make_f_n`.
 get_n_stats <- function(df, col_order) {
+    # get the counting functions
     f_list_n <- make_f_n(0:9)
+    # get the number of intervals
     df_sub <- subset(df, measure == "n")
+    # loop over the counting functions
     n_stats <- lapply(
         seq_along(f_list_n),
         function(i, f_list_n, df_sub) {
@@ -1560,6 +1513,8 @@ get_n_stats <- function(df, col_order) {
     n_stats[col_order]
 }
 
+# This function calculates the MSE, variance and bias
+# the estimates
 get_bias_var_stats <- function(df, col_order) {
     # get the effect
     effect <- attributes(df)$effect
@@ -1579,10 +1534,15 @@ get_bias_var_stats <- function(df, col_order) {
     var_est <- stats::aggregate(
         value ~ method,
         FUN = function(x) {
-            x <- x[!is.na(x)]
-            n <- length(x)
-            n^(-1) * sum((x - mean(x))^2)
-            # var(x, na.rm = TRUE)
+            if (all(is.na(x))) {
+                NA_real_
+            } else {
+                # similar to var(x, na.rm = TRUE) but
+                # uses 1/n instead of 1/(n-1)
+                x <- x[!is.na(x)]
+                n <- length(x)
+                n^(-1) * sum((x - mean(x))^2)
+            }
         },
         data = df_sub_est
     )
@@ -1623,36 +1583,47 @@ get_bias_var_stats <- function(df, col_order) {
     )
 }
 
+# This function calculates the mean probability of acceptance.
+# This is only important when we simulate with publication bias.
+# If there is no publication bias, `p_accept` will be NULL
 get_paccept_stats <- function(p_accept, col_order) {
-    data.frame(
-        measure = "p_accept",
-        method = "none",
-        is_ci = FALSE,
-        is_pi = FALSE,
-        is_new = FALSE,
-        value = mean(p_accept),
-        usage = "paccept_plot",
-        stat_fun = "mean",
-        stringsAsFactors = FALSE,
-        row.names = NULL
-    )[col_order]
+    if (is.null(p_accept)) {
+        NULL
+    } else {
+        data.frame(
+            measure = "p_accept",
+            method = "none",
+            is_ci = FALSE,
+            is_pi = FALSE,
+            is_new = FALSE,
+            value = mean(p_accept),
+            usage = "paccept_plot",
+            stat_fun = "mean",
+            stringsAsFactors = FALSE,
+            row.names = NULL
+        )[col_order]
+    }
 }
 
 
 # This is a wrapper function that calls all of the other
 # functions above.
 get_summary_measures <- function(df, p_accept, pars) {
-    # Get all of the statistics
+    # Get all of the statistics and put them into a data frame
+    # Also add parameters
     mean_stats <- get_mean_stats(df = df)
     col_order <- names(mean_stats)
     gamma_stats <- get_gamma_stats(df = df, col_order = col_order)
     n_stats <- get_n_stats(df = df, col_order = col_order)
     bias_var_stats <- get_bias_var_stats(df = df, col_order = col_order)
+    # This will be NULL if no publication bias
     p_accept_stats <- get_paccept_stats(
         p_accept = p_accept,
         col_order = col_order
     )
 
+    # This works because in R, the return of rbind(df, NULL),
+    # with df being a data.frame, is just df instead of an error
     res <- rbind(
         mean_stats,
         gamma_stats,
@@ -1661,12 +1632,13 @@ get_summary_measures <- function(df, p_accept, pars) {
         p_accept_stats,
         make.row.names = FALSE
     )
+    # add the parameters and return
     p <- as.data.frame(lapply(pars, rep, times = nrow(res)))
     cbind(p, res)
 }
 
 
-## Add another wrapper that handles possible errors
+## Wrapper that handles possible errors
 calc_summary_measures <- function(df, p_accept, pars, i) {
     tryCatch({
         get_summary_measures(df = df, p_accept = p_accept, pars = pars)
@@ -1777,16 +1749,19 @@ sim <- function(
             cat("start", j, "of", nrow(grid), fill = TRUE)
             pars <- grid[j, ]
 
-            # av is a list with elements that are either a tibble or NA
+            # av is a list with elements that are either a data.frame or NA
             # (the latter in case of an error)
             av <- vector("list", length = N)
-            p_accept <- vector("numeric", length = N)
+            # Also keep track of the average probabilities when simulating
+            # publication bias
+            pb <- pars$bias != "none"
+            p_accept <- if (pb) vector("numeric", length = N) else NULL
             for (i in seq_len(N)) {
                 # system(paste0("printf 'j=", j, ", i=", i, "\n'"))
                 # Repeat this N times. Simulate studies, calculate CIs,
                 # calculate measures
                 res <- sim_effects(pars = pars, i = i)
-                p_accept[i] <- attributes(res)$p_accept
+                if (pb) p_accept[i] <- attributes(res)$p_accept
                 CIs <- calc_ci(x = res, pars = pars, i = i)
                 av[[i]] <- calc_measures(x = CIs, pars = pars, i = i)
             }
@@ -1849,7 +1824,7 @@ grid <- expand.grid(
 )
 
 # For testing
-# grid <- grid[floor(seq(1, 1080, length.out = 15)), ]
+# grid <- grid[floor(seq(1, 1080, length.out = 16)), ]
 
 ## run simulation, e.g., on the Rambo server of I-MATH
 start <- Sys.time()
