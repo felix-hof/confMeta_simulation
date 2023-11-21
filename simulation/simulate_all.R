@@ -1574,11 +1574,16 @@ get_bias_var_stats <- function(df, col_order) {
         FUN = function(x) mean(x, na.rm = TRUE),
         data = df_sub_est
     )
-    bias <- within(mean_est, value <- abs(value - effect))
+    bias <- within(mean_est, value <- value - effect)
     # Calculate variance, i.e. var(estimates)
     var_est <- stats::aggregate(
         value ~ method,
-        FUN = function(x) var(x, na.rm = TRUE),
+        FUN = function(x) {
+            x <- x[!is.na(x)]
+            n <- length(x)
+            n^(-1) * sum((x - mean(x))^2)
+            # var(x, na.rm = TRUE)
+        },
         data = df_sub_est
     )
     # Calculate MSE, i.e. (1/n) * sum((estimate - true_effect)^2)
@@ -1591,6 +1596,13 @@ get_bias_var_stats <- function(df, col_order) {
         effect = effect
     )
     # Check
+    # test <- Reduce(
+    #     f = function(x, y) merge(x, y, all = TRUE, by = "method"),
+    #     x = list(bias, var_est, mse_est)
+    # )
+    # names(test)[2:4] <- c("bias", "var", "mse")
+    # out <- cbind(sum = with(test, var + bias^2), mse =  test$mse)
+    # out[, 1L] - out[, 2L]
     ll <- list("bias" = bias, "var" = var_est, "mse" = mse_est)
     do.call(
         "rbind",
@@ -1762,7 +1774,7 @@ sim <- function(
             # if error happened, skip the rest of the loop iterations
             out <- "skipped"
         } else {
-            # cat("start", j, "of", nrow(grid), fill = TRUE)
+            cat("start", j, "of", nrow(grid), fill = TRUE)
             pars <- grid[j, ]
 
             # av is a list with elements that are either a tibble or NA
@@ -1770,7 +1782,7 @@ sim <- function(
             av <- vector("list", length = N)
             p_accept <- vector("numeric", length = N)
             for (i in seq_len(N)) {
-                system(paste0("printf 'j=", j, ", i=", i, "\n'"))
+                # system(paste0("printf 'j=", j, ", i=", i, "\n'"))
                 # Repeat this N times. Simulate studies, calculate CIs,
                 # calculate measures
                 res <- sim_effects(pars = pars, i = i)
@@ -1793,7 +1805,7 @@ sim <- function(
                     df = df,
                     p_accept = p_accept,
                     pars = pars,
-                    i = i
+                    i = j
                 )
                 out
             }
