@@ -1,4 +1,4 @@
-## create figures from simulation output
+# create figures from simulation output
 
 # load libraries
 rm(list = ls())
@@ -111,11 +111,15 @@ load(paste0("RData/simulate_all.RData"))
 
 # improv for now (TODO: once this is handled in sim, delete it here)
 out <- out |>
-    mutate(method = convert_names(method))
+    mutate(
+        method = convert_names(method),
+        I2 = factor(I2),
+        k = factor(k)
+    )
 
 # Prepare data (meanplots) ----
 out_meanplots <- out %>%
-    filter(usage == "mean_plot", measure != "gamma_min")
+    filter(usage == "mean_plot")
 
 # Prepare data (gammamax) ----
 out_gammamax <- out %>%
@@ -153,6 +157,10 @@ out_n <- out %>%
 out_sum <- out_meanplots %>%
     filter(grepl("coverage", measure))
 
+# Prepare data (summary) ----
+out_pubbias <- out %>%
+    filter(usage == "paccept_plot")
+
 # Set output directory -----
 out_dir <- "~/test/Institution/harmonic_mean"
 
@@ -165,18 +173,18 @@ plotPanels <- function(
     measure = c(
         "coverage_true", "coverage_effects", "coverage_effects_all",
         "coverage_effects_min1", "coverage_prediction", "n",
-        "width", "score", "mse"
+        "width", "score", "mse", "var", "bias", "p_accept"
     ),
     by = c("method", "I2")
 ) {
 
     measure <- match.arg(measure)
     by <- match.arg(by)
-    data <- data %>%
-        mutate(
-            k = factor(k),
-            I2 = factor(I2)
-        )
+    # data <- data %>%
+    #     mutate(
+    #         k = factor(k),
+    #         I2 = factor(I2)
+    #     )
     if (by == "method") {
         p <- data %>%
             # Set order of plots
@@ -187,15 +195,6 @@ plotPanels <- function(
                         "Harmonic Mean Additive CI (chisq)",
                         "Harmonic Mean Multiplicative CI (chisq)",
                         "Hartung & Knapp PI",
-                        # "Harmonic Mean CI (f)",
-                        # "Harmonic Mean Additive CI (f)",
-                        # "Harmonic Mean Multiplicative CI (f)",
-                        # "k-Trials CI",
-                        # "k-Trials Additive CI",
-                        # "k-Trials Multiplicative CI",
-                        # "Pearson CI",
-                        # "Pearson Additive CI",
-                        # "Pearson Multiplicative CI",
                         "Edgington CI",
                         "Edgington Additive CI",
                         "Edgington Multiplicative CI",
@@ -209,19 +208,6 @@ plotPanels <- function(
                         mutate(method = factor(method, levels = order))
                 } else {
                     order <- c(
-                        # "Harmonic Mean CI (chisq)",
-                        # "Harmonic Mean Additive CI (chisq)",
-                        # "Harmonic Mean Multiplicative CI (chisq)",
-                        # "Hartung & Knapp CI",
-                        # "Harmonic Mean CI (f)",
-                        # "Harmonic Mean Additive CI (f)",
-                        # "Harmonic Mean Multiplicative CI (f)",
-                        # "k-Trials CI",
-                        # "k-Trials Additive CI",
-                        # "k-Trials Multiplicative CI",
-                        # "Pearson CI",
-                        # "Pearson Additive CI",
-                        # "Pearson Multiplicative CI",
                         "Edgington (none) CI",
                         "Edgington (REML) CI",
                         "Edgington (DL) CI",
@@ -243,7 +229,7 @@ plotPanels <- function(
                 }
             } %>%
             ggplot(mapping = aes(x = k, y = value, color = I2)) +
-            facet_wrap(~ method) +
+            facet_wrap(~method) +
             geom_point() +
             stat_summary(fun = "mean", geom = "line", aes(group = I2)) +
             scale_color_discrete(name = expression(I^2)) +
@@ -264,6 +250,11 @@ plotPanels <- function(
     if (stringr::str_detect(measure, "coverage")) {
         p <- p +
             geom_hline(yintercept = 0.95, lty = 2, alpha = 0.5)
+    }
+
+    if (stringr::str_detect(measure, "bias")) {
+        p <- p +
+            geom_hline(yintercept = 0, lty = 2, alpha = 0.5)
     }
     p
 }
@@ -303,7 +294,7 @@ for (x in list_seq) { # loop over summary (eg. dist)
         opts[list_seq[list_seq != x]],
         stringsAsFactors = FALSE
     )
-    # loop over all combinations of other parameters (e.g. bias, large, he)
+    # loop over all combinations of other parameters (e.g. bias, large, effect)
     for (y in seq_len(nrow(grid_others))) {
         # filter the data by current parameter combination
         filters <- lapply(seq_along(grid_others), function(z) {
@@ -385,24 +376,6 @@ list_seq <- seq_along(opts)
 
 # Set order of the plots
 ord <- c(
-    # "Harmonic Mean CI (chisq)",
-    # "Harmonic Mean Additive CI (chisq)",
-    # "Harmonic Mean Multiplicative CI (chisq)",
-    #"Harmonic Mean CI (f)",
-    #"Harmonic Mean Additive CI (f)",
-    #"Harmonic Mean Multiplicative CI (f)",
-    # "k-Trials CI",
-    # "k-Trials Additive CI",
-    # "k-Trials Multiplicative CI",
-    # "Pearson CI",
-    # "Pearson Additive CI",
-    # "Pearson Multiplicative CI",
-    # "Edgington CI",
-    # "Edgington Additive CI",
-    # "Edgington Multiplicative CI",
-    # "Fisher CI",
-    # "Fisher Additive CI",
-    # "Fisher Multiplicative CI"
     "Edgington (none) CI",
     "Edgington (REML) CI",
     "Edgington (DL) CI",
@@ -418,7 +391,7 @@ ord <- c(
 )
 
 ## For now, subset to only those methods we actually want plots of
-out_gammamax <- subset(out_gammamax, method %in% ord)
+# out_gammamax <- subset(out_gammamax, method %in% ord)
 
 
 
@@ -575,7 +548,7 @@ ord <- c(
 )
 
 ## For now, subset to only those methods we actually want plots of
-out_n <- subset(out_n, method %in% ord)
+# out_n <- subset(out_n, method %in% ord)
 
 
 # loop over summary (eg. dist)
@@ -654,133 +627,242 @@ for (x in list_seq) {
     }
 }
 
+# p_accept plots ---------------------------------------------------------------
+
+# delete the following once the simulation finished
+out_pubbias <- out_pubbias |>
+    filter(value != 1)
+
+out_path <- file.path(out_dir, "figs/p_accept")
+dir.create(out_path, showWarnings = FALSE, recursive = TRUE)
+for (i in unique(out_pubbias$measure))
+    dir.create(file.path(out_path, i), showWarnings = FALSE)
+
+opts <- list(
+    dist = out_pubbias %>% pull(dist) %>% unique(),
+    bias = out_pubbias %>% pull(bias) %>% unique(),
+    large = out_pubbias %>% pull(large) %>% unique(),
+    effect = out_pubbias %>% pull(effect) %>% unique() #,
+    # heterogeneity = out_pubbias %>% pull(heterogeneity) %>% unique()
+)
+measure_opts <- out_pubbias %>% pull(measure) %>% unique()
+
+list_seq <- seq_along(opts)
+
+for (x in list_seq) { # loop over summary (eg. dist)
+    current <- names(opts)[x]
+    current_levels <- opts[[current]]
+    cat(
+        "\n",
+        "Currently constructing plots for:",
+        current,
+        paste0("(", paste0(current_levels, collapse = ", "), ")"),
+        "\n"
+    )
+    grid_others <- expand.grid(
+        opts[list_seq[list_seq != x]],
+        stringsAsFactors = FALSE
+    )
+    # loop over all combinations of other parameters (e.g. bias, large, effect)
+    for (y in seq_len(nrow(grid_others))) {
+        # filter the data by current parameter combination
+        filters <- lapply(seq_along(grid_others), function(z) {
+            lhs <- names(grid_others)[z]
+            op <- quote(`==`)
+            rhs <- grid_others[y, z]
+            expr(`!!`(op)(!!sym(lhs), !!rhs))
+        })
+        img_data <- out_pubbias %>% filter(!!!filters)
+        me <- "p_accept"
+        # for (me in measure_opts) { # loop over different measures
+            img_data_me <- img_data %>% filter(measure == me)
+            ylim <- with(img_data_me, c(min(value), max(value)))
+            lapply(
+                current_levels,
+                function(z) {
+                    title <- img_data_me %>%
+                        select(
+                            -k, -I2, -method, -measure,
+                            -value, -all_of(current),
+                            -sampleSize, -usage, -stat_fun,
+                            -is_ci, -is_pi, -is_new
+                        ) %>%
+                        distinct() %>%
+                        bind_cols(!!current := z) %>%
+                        select(order(colnames(.))) %>%
+                        make_title()
+                    img_data_me %>%
+                        filter(!!sym(current) == z) %>%
+                        ggplot(aes(x = k, y = value, color = I2)) +
+                        geom_point() +
+                        stat_summary(
+                            fun = "mean",
+                            geom = "line",
+                            aes(group = I2)
+                        ) +
+                        scale_color_discrete(name = expression(I^2)) +
+                        ylim(ylim) +
+                        xlab("# studies") +
+                        ylab(me) +
+                        ggtitle(eval(title)) +
+                        theme(
+                            text = element_text(size = 9),
+                            plot.title = element_text(size = 10)
+                        )
+                }
+            ) %>%
+                wrap_plots(guides = "collect") &
+                theme(legend.position = "bottom")
+            filename <- paste0(
+                out_path, "/", me, "/", toupper(current), "_",
+                paste0(
+                    paste0(
+                        names(grid_others[y, ]),
+                        "_", grid_others[y, ]
+                    ),
+                    collapse = "_"
+                ),
+                ".png"
+            )
+            cat("\33[2K\rMaking file: ", filename)
+            ggsave(
+                filename = filename,
+                width = length(current_levels) * 6.5,
+                height = 12,
+                units = "in",
+                device = ragg::agg_png
+            )
+        # }
+    }
+}
+
+
 # Summary of meanplots ---------------------------------------------------------
 
 # TODO: edit filename (effect is not incorporated yet)
 
-# Make directories
-out_path <- file.path(out_dir, "figs/summary/")
-dir.create(out_path, showWarnings = FALSE, recursive = TRUE)
-
-# Set types of plots
-opts <- list(
-    bias = unique(out_sum$bias),
-    meth = unique(out_sum$method),
-    meas = unique(out_sum$measure)
-)
-
-# Set the order of plots
-method_order <- c(
-    "Edgington (none) CI",
-    "Edgington (REML) CI",
-    "Edgington (DL) CI",
-    "Edgington (PM) CI",
-    "Fisher (none) CI",
-    "Fisher (REML) CI",
-    "Fisher (DL) CI",
-    "Fisher (PM) CI",
-    "Random effects (none) CI",
-    "Random effects (REML) CI",
-    "Random effects (DL) CI",
-    "Random effects (PM) CI",
-    "Hartung & Knapp (REML) CI",
-    "Henmi & Copas (DL) CI"
-)
-
-out_sum <- subset(out_sum, method %in% method_order)
-
-totitle <- function(string) {
-    stopifnot(
-        is.character(string),
-        length(string) == 1L
-    )
-    string <- gsub("_", " ", string)
-    string <- unlist(strsplit(string, split = " "))
-    string <- strsplit(string, split = "")
-    string <- vapply(string, function(y) {
-        y[1] <- toupper(y[1])
-        paste0(y, collapse = "")
-    }, character(1L))
-    paste0(string, collapse = " ")
-}
-
-for (x in opts$meas) {
-    data <- out_sum %>%
-        filter(measure == x) %>%
-        group_by(k, bias, I2, method, effect, heterogeneity) %>%
-        summarise(
-            mean_value = mean(value),
-            max_value = max(value),
-            min_value = min(value),
-            .groups = "drop"
-        )
-    # split methods into additive, multiplicative, and rest
-    methods <- unique(data[c("method", "heterogeneity")])
-    add_idx <- data$heterogeneity == "additive"
-    mult_idx <- grepl("Multiplicative", methods, fixed = TRUE)
-    additive <- methods[add_idx]
-    multiplicative <- methods[mult_idx]
-    rest <- methods[!(add_idx | mult_idx)]
-    # list of methods for each plot
-    method_list <- list(
-        additive = c(additive, rest),
-        multiplicative = c(multiplicative, rest)
-    )
-    # subset data according to methods and fix order
-    lapply(seq_along(method_list), function(y) {
-        out <- subset(data, method %in% method_list[[y]])
-        # Get the ylim
-        ylimes <- c(min(out$min_value), max(out$max_value))
-        # set transparency
-        transparency <- 0.6
-        # get methods to loop over
-        methods <- unique(out$method)
-        # order them
-        methods <- method_order[method_order %in% methods]
-        # make plots
-        plots <- lapply(seq_along(methods), function(z) {
-            out %>%
-                filter(method == methods[z]) %>%
-                mutate(
-                    k = factor(k),
-                    I2 = factor(I2),
-                    bias = factor(
-                        bias,
-                        levels = c("none", "moderate", "strong")
-                    )
-                ) %>%
-                ggplot(aes(x = k, y = mean_value, color = I2, group = I2)) +
-                geom_line() +
-                geom_point() +
-                geom_errorbar(
-                    aes(ymin = min_value, ymax = max_value),
-                    alpha = transparency
-                ) +
-                scale_color_discrete(name = expression(I^2)) +
-                facet_wrap(~bias) +
-                ylim(ylimes) +
-                theme_bw() +
-                theme(legend.position = "bottom") +
-                labs(y = methods[z])
-        }) %>%
-            wrap_plots(., guides = "collect", nrow = length(.)) +
-            plot_annotation(title = totitle(x)) &
-            theme(legend.position = "bottom")
-        ggsave(
-            filename = paste0(
-                out_path,
-                x,
-                "_",
-                if (y == 1L) "additive" else "multiplicative",
-                ".png"
-            ),
-            device = ragg::agg_png,
-            plot = plots,
-            width = length(unique(out$bias)) * 5,
-            height = length(unique(out$method)) * 5,
-            units = "in"
-        )
-
-    })
-}
-
+# # Make directories
+# out_path <- file.path(out_dir, "figs/summary/")
+# dir.create(out_path, showWarnings = FALSE, recursive = TRUE)
+#
+# # Set types of plots
+# opts <- list(
+#     bias = unique(out_sum$bias),
+#     meth = unique(out_sum$method),
+#     meas = unique(out_sum$measure)
+# )
+#
+# # Set the order of plots
+# method_order <- c(
+#     "Edgington (none) CI",
+#     "Edgington (REML) CI",
+#     "Edgington (DL) CI",
+#     "Edgington (PM) CI",
+#     "Fisher (none) CI",
+#     "Fisher (REML) CI",
+#     "Fisher (DL) CI",
+#     "Fisher (PM) CI",
+#     "Random effects (none) CI",
+#     "Random effects (REML) CI",
+#     "Random effects (DL) CI",
+#     "Random effects (PM) CI",
+#     "Hartung & Knapp (REML) CI",
+#     "Henmi & Copas (DL) CI"
+# )
+#
+# out_sum <- subset(out_sum, method %in% method_order)
+#
+# totitle <- function(string) {
+#     stopifnot(
+#         is.character(string),
+#         length(string) == 1L
+#     )
+#     string <- gsub("_", " ", string)
+#     string <- unlist(strsplit(string, split = " "))
+#     string <- strsplit(string, split = "")
+#     string <- vapply(string, function(y) {
+#         y[1] <- toupper(y[1])
+#         paste0(y, collapse = "")
+#     }, character(1L))
+#     paste0(string, collapse = " ")
+# }
+#
+# for (x in opts$meas) {
+#     data <- out_sum %>%
+#         filter(measure == x) %>%
+#         group_by(k, bias, I2, method, effect, heterogeneity) %>%
+#         summarise(
+#             mean_value = mean(value),
+#             max_value = max(value),
+#             min_value = min(value),
+#             .groups = "drop"
+#         )
+#     # split methods into additive, multiplicative, and rest
+#     methods <- unique(data[c("method", "heterogeneity")])
+#     add_idx <- data$heterogeneity == "additive"
+#     mult_idx <- grepl("Multiplicative", methods, fixed = TRUE)
+#     additive <- methods[add_idx]
+#     multiplicative <- methods[mult_idx]
+#     rest <- methods[!(add_idx | mult_idx)]
+#     # list of methods for each plot
+#     method_list <- list(
+#         additive = c(additive, rest),
+#         multiplicative = c(multiplicative, rest)
+#     )
+#     # subset data according to methods and fix order
+#     lapply(seq_along(method_list), function(y) {
+#         out <- subset(data, method %in% method_list[[y]])
+#         # Get the ylim
+#         ylimes <- c(min(out$min_value), max(out$max_value))
+#         # set transparency
+#         transparency <- 0.6
+#         # get methods to loop over
+#         methods <- unique(out$method)
+#         # order them
+#         methods <- method_order[method_order %in% methods]
+#         # make plots
+#         plots <- lapply(seq_along(methods), function(z) {
+#             out %>%
+#                 filter(method == methods[z]) %>%
+#                 mutate(
+#                     k = factor(k),
+#                     I2 = factor(I2),
+#                     bias = factor(
+#                         bias,
+#                         levels = c("none", "moderate", "strong")
+#                     )
+#                 ) %>%
+#                 ggplot(aes(x = k, y = mean_value, color = I2, group = I2)) +
+#                 geom_line() +
+#                 geom_point() +
+#                 geom_errorbar(
+#                     aes(ymin = min_value, ymax = max_value),
+#                     alpha = transparency
+#                 ) +
+#                 scale_color_discrete(name = expression(I^2)) +
+#                 facet_wrap(~bias) +
+#                 ylim(ylimes) +
+#                 theme_bw() +
+#                 theme(legend.position = "bottom") +
+#                 labs(y = methods[z])
+#         }) %>%
+#             wrap_plots(., guides = "collect", nrow = length(.)) +
+#             plot_annotation(title = totitle(x)) &
+#             theme(legend.position = "bottom")
+#         ggsave(
+#             filename = paste0(
+#                 out_path,
+#                 x,
+#                 "_",
+#                 if (y == 1L) "additive" else "multiplicative",
+#                 ".png"
+#             ),
+#             device = ragg::agg_png,
+#             plot = plots,
+#             width = length(unique(out$bias)) * 5,
+#             height = length(unique(out$method)) * 5,
+#             units = "in"
+#         )
+#
+#     })
+# }
