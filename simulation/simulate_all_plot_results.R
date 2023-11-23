@@ -103,6 +103,16 @@ convert_names <- function(id_strings) {
     vapply(st, get_names, character(1L))
 }
 
+to_char <- function(df) {
+    out <- lapply(
+        df,
+        function(col) {
+            as.character(col)
+        }
+    )
+    as.data.frame(out)
+}
+
 # Load data ----
 load(paste0("RData/simulate_all.RData"))
 
@@ -162,7 +172,8 @@ out_pubbias <- out %>%
     filter(usage == "paccept_plot")
 
 # Set output directory -----
-out_dir <- "~/test/Institution/harmonic_mean"
+# out_dir <- "~/test/Institution/harmonic_mean"
+out_dir <- "~/ownCloud/Institution/harmonic_mean"
 
 #' #' Helper function to plot means
 #' #' @param data obtained by simulate_all.R and saved in RData/simulate_all.RData
@@ -252,19 +263,18 @@ plotPanels <- function(
             geom_hline(yintercept = 0.95, lty = 2, alpha = 0.5)
     }
 
-    if (stringr::str_detect(measure, "bias")) {
-        p <- p +
-            geom_hline(yintercept = 0, lty = 2, alpha = 0.5)
-    }
     p
 }
 
+# for debugging purposes: Turn warnings into errors
+options(warn = 2)
+
+
+
 ## Mean plots ------------------------------------------------------------------
 
-
-
 ## 4.1
-out_path <- file.path(out_dir, "figs/meanplots")
+out_path <- file.path(out_dir, "figs_new/meanplots")
 dir.create(out_path, showWarnings = FALSE, recursive = TRUE)
 for (i in unique(out_meanplots$measure))
     dir.create(file.path(out_path, i), showWarnings = FALSE)
@@ -321,7 +331,7 @@ for (x in list_seq) { # loop over summary (eg. dist)
                         bind_cols(!!current := z) %>%
                         select(order(colnames(.))) %>%
                         make_title()
-                    img_data_me %>%
+                    p <- img_data_me %>%
                         filter(!!sym(current) == z) %>%
                         plotPanels(measure = me, by = "method") +
                         ylim(ylim) +
@@ -330,6 +340,11 @@ for (x in list_seq) { # loop over summary (eg. dist)
                             text = element_text(size = 9),
                             plot.title = element_text(size = 10)
                         )
+                    if (0 > ylim[1] & 0 < ylim[2]) {
+                        p <- p +
+                            geom_hline(yintercept = 0, lty = 2, alpha = 0.5)
+                    }
+                    p
                 }
             ) %>%
                 wrap_plots(guides = "collect") &
@@ -339,7 +354,7 @@ for (x in list_seq) { # loop over summary (eg. dist)
                 paste0(
                     paste0(
                         names(grid_others[y, ]),
-                        "_", grid_others[y, ]
+                        "_", to_char(grid_others[y, ])
                     ),
                     collapse = "_"
                 ),
@@ -357,9 +372,9 @@ for (x in list_seq) { # loop over summary (eg. dist)
     }
 }
 
-## gamma_min summary statistics ------------------------------------------------
+## gamma_max summary statistics ------------------------------------------------
 
-out_path <- file.path(out_dir, "figs/max_pH")
+out_path <- file.path(out_dir, "figs_new/max_pH")
 dir.create(out_path, showWarnings = FALSE, recursive = TRUE)
 
 opts <- list(
@@ -438,40 +453,45 @@ for (x in list_seq) { # loop over summary (eg. dist)
                 img_data %>%
                     filter(!!sym(current) == z) %>%
                     ggplot(aes(x = k, y = value, color = measure)) +
-                geom_point() +
-                geom_line() +
-                ylim(c(0, 1)) +
-                facet_wrap(~method, ncol = 4) +
-                labs(
-                    x = "# studies",
-                    y = "highest p-value",
-                    color = "Summary statistic",
-                    title = eval(title)
-                )
+                    facet_wrap(~method, ncol = 4) +
+                    geom_point() +
+                    stat_summary(fun = "mean", geom = "line", aes(group = measure)) +
+                    ylim(c(0, 1)) +
+                    labs(
+                        x = "# studies",
+                        y = "highest p-value",
+                        color = "Summary statistic",
+                        title = eval(title)
+                    )
             }
         ) %>%
             wrap_plots(guides = "collect") &
             theme(legend.position = "bottom",
                   text = element_text(size = 9),
                   plot.title = element_text(size = 10))
-        ggsave(filename = paste0(
+        filename <- paste0(
             out_path, "/", toupper(current), "_",
             paste0(
-                paste0(names(grid_others[y, ]), "_", grid_others[y, ]),
+                paste0(names(grid_others[y, ]), "_", to_char(grid_others[y, ])),
                 collapse = "_"
             ),
-            ".png"),
-               width = length(current_levels) * 7,
-               height = 12,
-               units = "in",
-               device = ragg::agg_png)
+            ".png"
+        )
+        cat("\33[2K\rMaking file: ", filename)
+        ggsave(
+            filename = filename,
+            width = length(current_levels) * 7,
+            height = 12,
+            units = "in",
+            device = ragg::agg_png
+        )
     }
 }
 
 
 ## relative frequencies --------------------------------------------------------
 
-out_path <- file.path(out_dir, "figs/rel_freq/")
+out_path <- file.path(out_dir, "figs_new/rel_freq")
 dir.create(out_path, showWarnings = FALSE, recursive = TRUE)
 
 # Adapt make_title function for now
@@ -585,7 +605,8 @@ for (x in list_seq) {
                 select(
                     -method, -measure, -value,
                     -all_of(current), -sampleSize,
-                    -usage, -stat_fun
+                    -usage, -stat_fun, -is_ci, -is_pi,
+                    -is_new
                 ) %>%
                 distinct() %>%
                 bind_cols(!!current := z) %>%
@@ -609,16 +630,20 @@ for (x in list_seq) {
                 text = element_text(size = 9),
                 plot.title = element_text(size = 10)
             )
-        ggsave(
-            filename = paste0(
-                out_path, "/", toupper(current), "_",
+        filename <- paste0(
+            out_path, "/", toupper(current), "_",
+            paste0(
                 paste0(
-                    paste0(
-                        names(grid_others[y, ]), "_",
-                        grid_others[y, ]), collapse = "_"
+                    names(grid_others[y, ]), "_",
+                    to_char(grid_others[y, ])
                 ),
-                ".png"
+                collapse = "_"
             ),
+            ".png"
+        )
+        cat("\33[2K\rMaking file: ", filename)
+        ggsave(
+            filename = filename,
             width = length(current_levels) * 7.5,
             height = 12,
             units = "in",
@@ -633,7 +658,7 @@ for (x in list_seq) {
 out_pubbias <- out_pubbias |>
     filter(value != 1)
 
-out_path <- file.path(out_dir, "figs/p_accept")
+out_path <- file.path(out_dir, "figs_new/p_accept")
 dir.create(out_path, showWarnings = FALSE, recursive = TRUE)
 for (i in unique(out_pubbias$measure))
     dir.create(file.path(out_path, i), showWarnings = FALSE)
@@ -718,7 +743,7 @@ for (x in list_seq) { # loop over summary (eg. dist)
                 paste0(
                     paste0(
                         names(grid_others[y, ]),
-                        "_", grid_others[y, ]
+                        "_", to_char(grid_others[y, ])
                     ),
                     collapse = "_"
                 ),
@@ -742,7 +767,7 @@ for (x in list_seq) { # loop over summary (eg. dist)
 # TODO: edit filename (effect is not incorporated yet)
 
 # # Make directories
-# out_path <- file.path(out_dir, "figs/summary/")
+# out_path <- file.path(out_dir, "figs_new/summary/")
 # dir.create(out_path, showWarnings = FALSE, recursive = TRUE)
 #
 # # Set types of plots
