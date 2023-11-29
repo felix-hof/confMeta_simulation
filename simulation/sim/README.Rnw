@@ -1,0 +1,212 @@
+\documentclass[letterpaper, 12pt]{article}
+%\usepackage[nomarkers]{endfloat} %%%%%%%%%
+\usepackage{calc}
+\usepackage{color}
+\usepackage{amsmath,amsthm,amssymb}
+\usepackage{graphicx}
+\usepackage{float}
+% Create new "listing" float
+\newfloat{listing}{tbhp}{lst}%[section]
+\floatname{listing}{Listing}
+\newcommand{\listoflistings}{\listof{listing}{List of Listings}}
+\floatstyle{plaintop}
+\restylefloat{listing}
+ 
+\usepackage{natbib}
+%\usepackage{multind}
+\usepackage{booktabs}
+\usepackage{enumerate}
+\usepackage{todonotes}
+% \usepackage{uarial}
+% \renewcommand{\familydefault}{\sfdefault}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% to change %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% \usepackage{lineno}
+%% \linenumber
+\renewcommand{\baselinestretch}{1}  %% 2
+
+\usepackage{color,xcolor}
+\definecolor{link}{HTML}{004C80}
+
+\usepackage[labelfont=bf]{caption}
+\usepackage[english]{babel}
+\usepackage[
+  pdftex,
+  plainpages=false,
+  pdfpagelabels,
+  pagebackref=true,
+  colorlinks=true,
+  citecolor=link,
+  linkcolor=link
+]{hyperref}
+\hypersetup{colorlinks,urlcolor=link}
+\usepackage{array, lipsum}
+
+% \usepackage{datetime}
+\usepackage[margin=2cm,textwidth=19cm]{geometry}
+\usepackage{float}
+
+
+
+\newcommand{\eg}{{e.\,g.\,}}
+\newcommand{\ie}{{i.\,e.\,}}
+\newcommand{\pkg}[1]{\textit{#1}}
+
+
+\newcommand{\N}{\mathcal{N}}
+
+\setlength\parindent{0pt}
+
+%\newcommand{\todo}[1]{\textcolor{red}{#1}}
+
+\makeatletter
+\DeclareRobustCommand*\textsubscript[1]{%
+  \@textsubscript{\selectfont#1}}
+\def\@textsubscript#1{%
+  {\m@th\ensuremath{_{\mbox{\fontsize\sf@size\z@#1}}}}}
+\makeatother
+
+
+\begin{document}
+\begin{center}
+  {\noindent \LARGE \bf Code documentation for the simulation study:\\[2mm]
+    Comparison of confidence intervals summarizing\\[2mm]
+    the uncertainty of the combined estimate of a meta-analysis
+  }\\
+\bigskip
+{\noindent \Large Felix Hofmann
+}\end{center}
+\bigskip
+\vspace*{.5cm}
+
+\tableofcontents
+
+\newpage 
+
+\section{Overview}
+
+This document gives an overview over the code that implements the
+simulation study \emph{Comparison of confidence intervals summarizing the
+uncertainty of the combined estimate of a meta-analysis}. The code is split into
+six different files:
+
+\begin{itemize}
+  \item \texttt{utils.R}
+  \item \texttt{study\_simulation.R}
+  \item \texttt{studies2cis.R}
+  \item \texttt{cis2measures.R}
+  \item \texttt{measures2summary.R}
+  \item \texttt{simulation.R}
+\end{itemize}
+
+The follwing sections will describe the contents of each of these scripts.
+
+\section{utils.R}
+
+<<include=FALSE>>=
+source("utils.R")
+@
+
+The script \emph{utils.R} contains short utility functions that are used
+multiple times throughout the simulation.
+
+\begin{itemize}
+  \item \texttt{rep2}
+  \item \texttt{error\_function}
+  \item \texttt{hMeanChiSqMu\_f}
+  \item \texttt{hMeanChiSqMu\_chisq}
+\end{itemize}
+
+Currently, we use only the functions \texttt{rep2()} and
+\texttt{error\_function()}.
+
+\texttt{rep2()} is an extension of the \texttt{rep()} function in the
+\emph{base} package. It works exactly as \texttt{rep()} but it can take an input
+vector for the \texttt{each} argument. It's use should become clear in the
+example below:
+
+<<>>=
+rep2(x = c("a", "b", "c"), each = 1:3)
+@
+
+\texttt{error\_function()} on the other hand is mainly used for logging. Thus,
+it is only used in \texttt{tryCatch}-blocks. The intended use is that in case of
+errors, the function stores the last object together with the current parameters
+to a file on disk (files \emph{error.rds} and \emph{pars.rds}). It also writes
+the error message as well as the iteration number to a text file
+(\emph{error.txt}).
+
+\section{study\textunderscore simulation.R}
+
+<<include=FALSE>>=
+source("study_simulation.R")
+@
+
+The script \emph{study\_simulation.R} contains all functions that are related to
+the simulation of the individual studies. The file contains the following functions.
+
+\begin{itemize}
+  \item \texttt{simRE}
+  \item \texttt{pAccept}
+  \item \texttt{simREbias}
+  \item \texttt{sim\_effects}
+\end{itemize}
+
+These functions implement the simulation of the individual studies of a
+meta-analysis. In the simulation, we only use \texttt{sim\_effects()}, the main
+function, which calls the other functions internally.
+
+This function has two arguments, \emph{pars} and \emph{i}
+which corresponds to the current iteration.
+
+\todo{describe arguments}
+
+% The argument \emph{pars} 
+% , a \emph{data.frame} with exactly
+% one row and columns \emph{k}, \emph{sampleSize}, \emph{effect}, \emph{I2},
+% \emph{heterogeneity}, \emph{dist}, \emph{large} and \emph{bias},
+
+The mechanism, how this 
+
+
+\section{studies2cis.R}
+
+\begin{itemize}
+  \item \texttt{get\_classic\_obj\_hc()}
+  \item \texttt{get\_classic\_obj\_reml()}
+  \item \texttt{get\_classic\_obj\_hk()}
+  \item \texttt{tau\_prior\_bm()}
+  \item \texttt{get\_classic\_obj\_bm()}
+  \item \texttt{get\_classic\_obj()}
+  \item \texttt{get\_classic\_ci\_reml()}
+  \item \texttt{get\_classic\_ci\_hk()}
+  \item \texttt{get\_classic\_ci\_hc()}
+  \item \texttt{get\_classic\_ci\_bm()}
+  \item \texttt{get\_classic\_pi\_reml()}
+  \item \texttt{get\_classic\_pi\_hk()}
+  \item \texttt{get\_classic\_interval()}
+  \item \texttt{get\_classic\_intervals()}
+  \item \texttt{get\_p\_value\_functions()}
+  \item \texttt{get\_p\_value\_args()}
+  \item \texttt{get\_new\_ci\_gamma()}
+  \item \texttt{get\_new\_intervals()}
+  \item \texttt{get\_tau2()}
+  \item \texttt{get\_ints\_reml()}
+  \item \texttt{sim2CIs()}
+  \item \texttt{calc\_ci()}
+\end{itemize}
+
+The main function here is \texttt{calc\_ci()}, which calls all the other
+functions internally.
+
+\todo{Describe arguments, explain structure}
+
+\section{cis2measures.R}
+\section{measures2summary.R}
+\section{simulation.R}
+
+%\newpage
+%\bibliographystyle{apalike}
+%\bibliography{biblio.bib}
+
+
+\end{document}
