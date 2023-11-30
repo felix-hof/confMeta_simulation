@@ -218,7 +218,7 @@ grid <- expand.grid(
 
 ## run simulation, e.g., on the Rambo server of I-MATH
 start <- Sys.time()
-out <- sim(grid = grid, N = 1e4, cores = 120)
+out <- sim(grid = grid, N = 2.5e3, cores = 120)
 # out <- sim(grid = grid, N = 4, cores = 15)
 end <- Sys.time()
 print(end - start)

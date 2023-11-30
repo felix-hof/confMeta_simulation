@@ -1,10 +1,15 @@
-TARGET = README
+.DEFAULT_GOAL := data
+README = README
+data = RData/simulate_all.RData
 
-all: $(TARGET).pdf
+data: simulation.R
+	Rscript install_packages.R && Rscript simulation.R 2>&1 | tee simulate_all.Rout
 
-$(TARGET).pdf: $(TARGET).Rnw
-	Rscript -e "knitr::knit('$(TARGET).Rnw')"
-	latexmk -pdf $(TARGET).tex
+all: $(README).pdf
+
+$(README).pdf: $(README).Rnw
+	Rscript -e "knitr::knit('$(README).Rnw')"
+	latexmk -pdf $(README).tex
 
 clean:
 	latexmk -c
@@ -12,4 +17,4 @@ clean:
 cleanall:
 	latexmk -C
 
-.PHONY: all preview clean cleanall
+.PHONY: all data preview clean cleanall
