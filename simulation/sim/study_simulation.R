@@ -229,8 +229,9 @@ simREbias <- function(
             k = large, sampleSize = sampleSize, effect = effect,
             I2 = I2, heterogeneity = heterogeneity, dist = dist, large = large
         )
-        o <- rbind(oLarge, o[-seq_len(large), ])
-        pa <- c(pa, rep(1, large))
+        sl <- seq_len(large)
+        o <- rbind(oLarge, o[-sl, ])
+        pa <- c(rep(1, large), pa[-sl])
     }
 
     ## add attributes and return

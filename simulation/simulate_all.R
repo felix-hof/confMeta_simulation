@@ -43,10 +43,8 @@ blas_set_num_threads(1) # multi threading of BLAS
 ## repeat each element of `x` `each` times
 ## rep2(c("a", "b", "c"), c(1, 2, 3)) --> c("a", "b", "b", "c", "c", "c")
 rep2 <- function(x, each) {
-    do.call(
-        "c",
-        mapply(FUN = rep, x = x, each = each, SIMPLIFY = FALSE)
-    )
+    stopifnot(length(x) == length(each))
+    do.call("c", mapply(FUN = rep, x = x, each = each, SIMPLIFY = FALSE))
 }
 
 ## This function is only used in tryCatch() blocks in case of an error.
@@ -752,6 +750,7 @@ simREbias <- function(
             I2 = I2, heterogeneity = heterogeneity, dist = dist, large = large
         )
         o <- rbind(oLarge, o[-seq_len(large), ])
+        pa <- c(pa, rep(1, large))
     }
 
     ## add attributes and return
@@ -1824,12 +1823,15 @@ grid <- expand.grid(
 )
 
 # For testing
-# grid <- grid[floor(seq(1, 1080, length.out = 16)), ]
+grid <- grid[floor(seq(1, 1080, length.out = 16)), ]
+N <- 4
+i <- 1
+j <- 5
 
 ## run simulation, e.g., on the Rambo server of I-MATH
 start <- Sys.time()
-out <- sim(grid = grid, N = 1e4, cores = 120)
-# out <- sim(grid = grid, N = 2, cores = 15)
+# out <- sim(grid = grid, N = 1e4, cores = 120)
+# out <- sim(grid = grid, N = 4, cores = 15)
 end <- Sys.time()
 print(end - start)
 
