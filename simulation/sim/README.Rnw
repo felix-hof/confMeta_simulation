@@ -1,7 +1,9 @@
 \documentclass[letterpaper, 12pt]{article}
+\usepackage[margin=2cm,textwidth=19cm]{geometry}
 %\usepackage[nomarkers]{endfloat} %%%%%%%%%
 \usepackage{calc}
 \usepackage{color}
+\usepackage{dsfont}
 \usepackage{amsmath,amsthm,amssymb}
 \usepackage{graphicx}
 \usepackage{float}
@@ -45,8 +47,35 @@
 \usepackage[margin=2cm,textwidth=19cm]{geometry}
 \usepackage{float}
 
+% tikz related definitions
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows}
 
+\tikzstyle{once} = [rectangle, rounded corners, 
+minimum width=3cm, 
+minimum height=1cm, text centered, 
+draw=black, fill=green!30]
 
+\tikzstyle{more} = [rectangle, rounded corners, 
+minimum width=3cm, 
+minimum height=1cm, text centered, 
+draw=black, fill=yellow!30]
+
+\tikzstyle{most} = [rectangle, rounded corners, 
+minimum width=3cm, 
+minimum height=1cm, text centered, 
+draw=black, fill=red!30]
+
+\tikzstyle{decision} = [diamond, 
+minimum width=3cm, 
+minimum height=1cm, 
+text centered, 
+draw=black, 
+fill=blue!30]
+
+\tikzstyle{arrow} = [thick,->,>=stealth]
+
+% define some commands
 \newcommand{\eg}{{e.\,g.\,}}
 \newcommand{\ie}{{i.\,e.\,}}
 \newcommand{\pkg}[1]{\textit{#1}}
@@ -82,131 +111,406 @@
 
 \newpage 
 
-\section{Overview}
+\section{Overview} \label{sec:overview}
 
 This document gives an overview over the code that implements the
 simulation study \emph{Comparison of confidence intervals summarizing the
-uncertainty of the combined estimate of a meta-analysis}. The code is split into
-six different files:
+uncertainty of the combined estimate of a meta-analysis}.
+
+
+\subsection{Terminology} \label{subsec:term}
+
+In order to understand make the contents of this document more clear, the
+following terminology is used:
+
+\begin{description}
+  \item [grid] A \texttt{data.frame} with columns:
+    \begin{description}
+      \item [\texttt{sampleSize}] The sample size for all of the studies in the
+        meta-analysis.
+      \item [\texttt{effect}] The true effect $\theta$ in the meta-analysis.
+        Here we use $\theta \in \{0.1, 0.2, 0.5\}$.
+      \item [\texttt{I2}] Higgin's $I^2$, \ie, the proportion of the variability
+        in the meta-analysis that is explained by between-study heterogeneity
+        rather than sampling error. Here we use $I^2 \in \{0, 0.3, 0.6, 0.9\}$.
+      \item [\texttt{k}] The number of studies in a given meta-analysis data
+        set. In this simulation we use $k \in \{3, 5, 10, 20, 50\}$.
+      \item [\texttt{heterogeneity}] The heterogeneity model used in simulation.
+        Currently, this is always \texttt{"additive"}.
+        % This is either \texttt{"additive"} or \texttt{"multiplicative"}.
+      \item [\texttt{dist}] The distribution of the individual study effects.
+        This is either \texttt{"Gaussian"} or \texttt{"t"}. The distribution
+        always has mean $\theta$.
+      \item [\texttt{bias}] The publication bias. This is one of
+        \texttt{"none"}, \texttt{"moderate"}, or \texttt{"strong"}.
+      \item [\texttt{large}] The number of large studies in the meta-analysis.
+        These large studies have $10 \cdot$ \texttt{sampleSize} participants.
+        Currently, we use $\text{large} \in \{0, 1, 3\}$.
+    \end{description}
+  \item [method] With the term \emph{method} we refer to a specific method used
+    to calculate a confidence interval (CI) or point estimate. The methods of
+    interest in this simulation are currently \emph{Edgington}
+    \citep{edgington:72} and \emph{Fisher} \citep{fisher:34}.
+    As reference methods we use \emph{Hartung-Knapp} \citep{IntHoutIoannidis},
+    \emph{Henmi-Copas} \citep{henm:copa:10}, and the well-known
+    \emph{Random Effects} model.
+  \item [parameters] In the context of this document, we use the term
+    \emph{parameters} to refer to a set of values that determines the simulation
+    and assessment process within the simulation. Usually this is one row of
+    \texttt{grid} (see above). In the code base, this variable appears as
+    \texttt{pars}.
+  \item [N] The number of times we repeat the simulation and assessment
+    of the confidence intervals and point estimates for all parameters. In the
+    code base, this variable appears as \texttt{N}.
+  \item [heterogeneity estimation method] The method used to estimate the
+    between-study heterogeneity $\tau^2$. Currently, we use the four methods
+    \texttt{"none"}, \texttt{"DL"}, \texttt{"PM"}, and \texttt{"REML"}. Method
+    \texttt{"none"} means that we set $\tau^2 \stackrel{!}{=} 0$, while method
+    \texttt{"DL"} refers to the method of \citet{ders:lair:86}, \texttt{"PM"}
+    denotes the method of \citet{paul:man:82}, and \texttt{"REML"} refers to the
+    method of \citet{harv:77}.
+  \item [performance measure] With the term \emph{performance measures} we refer
+    to the measures we use to assess the CI(s) and point estimate(s) for one
+    single method and one single meta-analysis data set. As performance measures
+    for CIs, we currently record the width of the CI (\texttt{width}), the score
+    of the CI (\texttt{score}), the coverage of the true effect, \ie,
+    $\mathds{1}_{\theta \in \text{CI}}$ (\texttt{coverage\_true}), and the number of
+    confidence intervals (\texttt{n}). Regarding the point estimate(s), we only
+    record the estimate itself.
+  \item [summary measure] We define a \emph{summary measure} as a measure that
+    summarizes various records of a \emph{performance measure} for a given
+    method and fixed parameters. For CIs we use the mean to summarise the
+    performance measures. For point estimates, we use mean squared error (MSE),
+    bias, and variance. Moreover, we calculate the relative frequencies for the
+    number of CIs.
+\end{description}
+
+\subsection{Simulation details} \label{subsec:sim}
+
+The aim of this simulation is to assess the performance of novel estimation
+methods (\emph{Fisher}, \emph{Edgington}) for point estimates and confidence
+intervals in meta-analyses in comparison to established methods
+(\emph{Hartung-Knapp}, \emph{Henmi-Copas}, \emph{Random Effects}).
+
+\vspace*{.5cm}
+
+Thus, we have designed the simulation procedure as shown in
+Figure~\ref{fig:flow}. The implementation of the procedure can be found in the
+in function \texttt{sim()}, which is defined in file \texttt{simulation.R}.
+This process needs two inputs, a \emph{grid of parameters} and $N$, the number
+times we repeat the simulation and assessment of the CIs and point estimates
+for each set of parameters defined in the \texttt{grid}. With these two inputs,
+the simulation starts the first step by initialising a list (variable \texttt{o}
+in the code) in which the summary measures are ultimately stored. The second step
+is to extract a set of parameters (variable \texttt{pars} in the code) that is
+later used for the simulation and assessment of the CIs and point estimates. The
+third step consists of the initialization of two further variables (\texttt{av},
+\texttt{p\_accept} in the code) that store the performance measures of one
+simulated data set. Fourth, the following process is repeated $N$ times:
+\begin{enumerate}
+  \item Simulate a meta-analysis using the current parameters.
+  \item Estimate the between-study heterogeneity $\tau^2$ using all heterogeneity
+    estimation methods \texttt{"none"}, \texttt{"DL"}, \texttt{"PM"}, and
+    \texttt{"REML"}.
+  \item For each estimate of $\tau^2$, calculate the CIs and point estimates
+    using all methods, \ie, \emph{Edgington}, \emph{Fisher}, \emph{Hartung-Knapp},
+    \emph{Henmi-Copas}, and \emph{Random Effects}.
+  \item Calculate the performance measures for resulting CI and point estimate.
+  \item Store the performance measures in variables \texttt{av} and
+    \texttt{p\_accept}.
+\end{enumerate}
+Fifth, the summary measures are calculated from the estimates using the same
+heterogeneity estimation method and CI construction method. Sixth, the performance
+measures are stored in the output list \texttt{o}. Seventh, the simulation did
+not go through all parameters sets yet, the process goes back to step two with
+new parameters. Otherwise, the simulation process stops and returns the output
+list \texttt{o}.
+
+\begin{figure}[H]
+\begin{center}
+\begin{tikzpicture}[node distance=1.75cm]
+
+\node (init) [once, font=\footnotesize] {Initialise list for summary measures:
+  \texttt{o}};
+\node (pars) [more, below of=init, font=\footnotesize] {Get one set of
+  parameters (\texttt{pars}) from \texttt{grid}};
+\node (initvars) [more, below of=pars, font=\footnotesize] {
+  Initialize variables for performance measures: \texttt{av}, \texttt{p\_accept}};
+\node (dec) [decision, align=left, below of=initvars, yshift=-1cm,
+  font=\footnotesize] {Evaluated $N$\\ data sets yet?};
+\node (calcsum) [more, align=left, below of=dec,
+  xshift=-4cm, yshift=-1cm, font=\footnotesize] {
+  Calculate summary measures using\\ measures in variables
+  \texttt{av}, \texttt{p\_accept}};
+\node (sim) [most, align=left, below of=dec, xshift=4cm, yshift=-1cm,
+  font=\footnotesize] {1. Simulate one data\\ set using \texttt{pars}};
+\node (tau) [most, align=left, below of=sim, font=\footnotesize] {
+  2. Estimate $\tau^2$ with all\\ heterogeneity estimation\\ methods};
+\node (ci) [most, below of=tau, font=\footnotesize] {3. Calculate CIs with all
+  methods for all $\tau^2$};
+\node (meas) [most, below of=ci, font=\footnotesize] {4. Calculate
+  performance measures};
+\node (store) [most, align=left, below of=meas, font=\footnotesize] {
+  5. Store performance measures\\ in variables \texttt{av},
+  \texttt{p\_accept}};
+\node (storesum) [more, below of=calcsum, font=\footnotesize] {Store summary
+  measures in output list \texttt{o}};
+\node (dec2) [decision, align=left, below of=storesum,
+  yshift=-1cm, font=\footnotesize] {
+  Evaluated\\ all sets of\\ parameters?};
+\node (ret) [once, below of=dec2, font=\footnotesize, yshift=-1cm] {
+  Return list of summary measures \texttt{o}};
+
+\draw [arrow] (init) -- (pars);
+\draw [arrow] (pars) -- (initvars);
+\draw [arrow] (initvars) -- (dec);
+\draw [arrow] (dec) -- node[anchor=north west] {yes} (calcsum);
+\draw [arrow] (dec) -- node[anchor=north east] {no} (sim);
+\draw [arrow] (sim) -- (tau);
+\draw [arrow] (tau) -- (ci);
+\draw [arrow] (ci) -- (meas);
+\draw [arrow] (meas) -- (store);
+\draw [arrow] (store) -| (dec);
+\draw [arrow] (calcsum) -- (storesum);
+\draw [arrow] (storesum) -- (dec2);
+\draw [arrow] (dec2) -- node[anchor=east] {yes} (ret);
+\draw [arrow] (dec2) --  node[anchor=west, above=2pt] {no} ++(-4,0) |- (pars);
+\end{tikzpicture}
+\end{center}
+  \caption{Flow chart of the simulation procedure. The colors indicate
+  different scopes of the procedure, \ie, green nodes are only executed once
+  in total, yellow nodes are executed once for each set of parameters, and red
+  nodes are executed $N$ times for each set of parameters. The blue diamonds
+  represent decision nodes.}
+  \label{fig:flow}
+\end{figure}
+
+
+\section{Structure of the code base} \label{sec:ov:proj-struct}
+
+The code is split into seven different files that all implement different aspects
+of the simulation process in Subsection~\ref{subsec:sim}. A list of these seven
+files is shown below.
 
 \begin{itemize}
-  \item \texttt{utils.R}
-  \item \texttt{study\_simulation.R}
-  \item \texttt{studies2cis.R}
-  \item \texttt{cis2measures.R}
-  \item \texttt{measures2summary.R}
-  \item \texttt{simulation.R}
+  \item \emph{simulation.R}
+  \item \emph{utils.R}
+  \item \emph{study\_simulation.R}
+  \item \emph{studies2cis.R}
+  \item \emph{cis2measures.R}
+  \item \emph{measures2summary.R}
+  \item \emph{plot\_results.R}
 \end{itemize}
 
-The follwing sections will describe the contents of each of these scripts.
+Each of these files contains functionality related to one particular step in the
+simulation. The main file is \emph{simulation.R}, which sources all of the
+other scripts,with the exception of \emph{plot\_results.R}. The sourced files,
+\ie, \emph{utils.R}, \emph{study\_simulation.R}, \emph{studies2cis.R},
+\emph{cis2measures.R}, and \emph{measures2summary.R} only contain function
+definitions, no other objects. A more detailed overview of the contents of each
+file can be found in the following subsections.
 
-\section{utils.R}
 
-<<include=FALSE>>=
+\subsection{simulation.R}
+
+This is the main file of the simulation. The code in this file does the
+following:
+
+\begin{enumerate}
+  \item Load necessary libraries.
+  \item Source the other files that implement parts of the simulation.
+  \item Define the function \texttt{sim()}, which contains the logic for the
+    green, yellow, and blue nodes shown in Figure~\ref{fig:flow}.
+  \item Define the object \texttt{grid}, a \texttt{data.frame} containing all
+    parameter combinations.
+  \item Set the number of iterations \texttt{N}.
+  \item Set the number of cores \texttt{cores}, the simulation should be run on.
+  \item Starts the simulation
+\end{enumerate}
+
+All other functionality is defined in the other files or the \emph{R}-package
+\pkg{confMeta}.
+
+\subsection{utils.R}
+
+<<utils,include=FALSE>>=
 source("utils.R")
 @
 
-The script \emph{utils.R} contains short utility functions that are used
-multiple times throughout the simulation.
 
-\begin{itemize}
-  \item \texttt{rep2}
-  \item \texttt{error\_function}
-  \item \texttt{hMeanChiSqMu\_f}
-  \item \texttt{hMeanChiSqMu\_chisq}
-\end{itemize}
+The file \texttt{utils.R} defines two helper functions that are used in various
+other functions throughout the simulation.
 
-Currently, we use only the functions \texttt{rep2()} and
-\texttt{error\_function()}.
+\begin{description}
+  \item [\texttt{rep2()}] A simple utility function that wraps the base
+    \emph{R} function \texttt{rep()}. The main difference is that it accepts
+    vector inputs for arguments \texttt{each} or \texttt{times}.
+  \item [\texttt{error\_function()}] A logger function that is only used within
+    \texttt{tryCatch()} blocks. In case of errors, the function saves the error
+    message to a file called \emph{error.txt}. It also stores the current
+    parameters (passed through argument \texttt{args}) to a file called
+    \emph{pars.rds}, and the last object received (argument \texttt{error\_obj})
+    to a file called \emph{error.rds}.
+\end{description}
 
-\texttt{rep2()} is an extension of the \texttt{rep()} function in the
-\emph{base} package. It works exactly as \texttt{rep()} but it can take an input
-vector for the \texttt{each} argument. It's use should become clear in the
-example below:
 
-<<>>=
-rep2(x = c("a", "b", "c"), each = 1:3)
-@
+\paragraph{Note: parallel execution}\mbox{}\\
+The simulation uses the \pkg{foreach}-package \citep{foreach} as a parallel
+backend with the \pkg{doRNG}-package for ensuring that the random numbers
+generated inside different for loops are independent and reproducible. This
+setup has, however, the drawback that without manual error handling, the
+simulation continues exection until all scenarios finished, even if some of the
+loops throw errors. This is, of course, rather undesirable since the simulation
+might run for a long time even if there are errors already in the first few
+iterations. Thus, all functions that simulate studies, calculate CIs,
+calculate performance measures, or calculate summary measures are wrapped in a
+\texttt{tryCatch()} block that calls \texttt{error\_function()} in case of an
+error. The \texttt{error\_function()} will then create a the file
+\emph{error.txt}. The simulation then checks in each iteration whether this file
+exists, and if so, just writes \texttt{"skipped"} into the output list
+\texttt{"o"} without computing anything. This, however, means that before
+restarting the simulation, the \emph{error.txt} file must be deleted.
 
-\texttt{error\_function()} on the other hand is mainly used for logging. Thus,
-it is only used in \texttt{tryCatch}-blocks. The intended use is that in case of
-errors, the function stores the last object together with the current parameters
-to a file on disk (files \emph{error.rds} and \emph{pars.rds}). It also writes
-the error message as well as the iteration number to a text file
-(\emph{error.txt}).
+\subsection{study\_simulation.R}
 
-\section{study\textunderscore simulation.R}
-
-<<include=FALSE>>=
+<<study_simulation, include=FALSE>>=
 source("study_simulation.R")
 @
 
-The script \emph{study\_simulation.R} contains all functions that are related to
-the simulation of the individual studies. The file contains the following functions.
+The script \emph{study\_simulation.R} contains all functions related to
+the simulation of a meta-analysis data set. Such a data set consists of a
+number of individual studies that are simulated as described in the simulation
+protocol.
 
-\begin{itemize}
-  \item \texttt{simRE}
-  \item \texttt{pAccept}
-  \item \texttt{simREbias}
-  \item \texttt{sim\_effects}
-\end{itemize}
+The file contains the definitions of the following functions.
 
-These functions implement the simulation of the individual studies of a
-meta-analysis. In the simulation, we only use \texttt{sim\_effects()}, the main
-function, which calls the other functions internally.
+\begin{description}
+  \item [\texttt{simRE()}] Simulates a meta-analysis data set. The inputs for
+    this function are \texttt{k}, \texttt{sampleSize}, \texttt{effect},
+    \texttt{I2}, \texttt{heterogeneity}, \texttt{dist}, and \texttt{large}. For
+    a more detailed explanation on what these arguments mean, see
+    Subsection~\ref{subsec:term} under \textbf{grid}. The function returns a
+    matrix with columns \texttt{theta}, \texttt{se}, and
+    \texttt{delta} which correspond to the observed study-specific effects, the
+    corresponding standard errors, and the true study-specific effects,
+    respectively.
+  \item [\texttt{pAccept()}] Calculates the acceptance probability for a given
+    study under publication bias. The function is only called if the argument
+    \texttt{bias} in function \texttt{simREbias()} is either \texttt{"moderate"}
+    or \texttt{"strong"}.
+  \item [\texttt{simREbias()}] Simulates a meta-analysis data. Under the hood
+    this function just calls \texttt{simRE()} in order to simulate meta-analyses
+    with \texttt{k} studies. In a second step, the publication bias is
+    incorporated if \texttt{bias} $\neq$ \texttt{"none"}. This is achieved by
+    calculating the acceptance probabilities using \texttt{pAccept()} and
+    sampling from a binomial distribution which studies
+    to keep. If the number of accepted studies is smaller than \texttt{k}, this
+    process is repeated until the meta-analysis has exactly \texttt{k} studies.
+    In the third step, large studies are sampled and added to the meta-analysis
+    if \texttt{large} $\neq$ 0. It outputs a matrix with the same format as
+    \texttt{simRE()} but it also attaches an attribute \texttt{p\_accept} to the
+    matrix indicating the mean acceptance probability for each study in the
+    meta-analysis. This attribute contains the value that is stored in as a
+    performance measure in the variable \texttt{p\_accept} mentioned in
+    Figure~\ref{fig:flow}.
+  \item [\texttt{sim\_effects()}] This is the main function for simulating
+    studies. Internally, it calls \texttt{simREbias()} and if that errors, runs
+    \texttt{error\_function()} such that the error is documented.
+\end{description}
 
-This function has two arguments, \emph{pars} and \emph{i}
-which corresponds to the current iteration.
+\subsection{studies2cis.R}
 
-\todo{describe arguments}
-
-% The argument \emph{pars} 
-% , a \emph{data.frame} with exactly
-% one row and columns \emph{k}, \emph{sampleSize}, \emph{effect}, \emph{I2},
-% \emph{heterogeneity}, \emph{dist}, \emph{large} and \emph{bias},
-
-The mechanism, how this 
+The file \emph{studies2cis.R} contains the functionality to convert a
+simulated meta-analysis data set into the CIs. The idea here is to
 
 
-\section{studies2cis.R}
+\subsection{cis2measures.R}
 
-\begin{itemize}
-  \item \texttt{get\_classic\_obj\_hc()}
-  \item \texttt{get\_classic\_obj\_reml()}
-  \item \texttt{get\_classic\_obj\_hk()}
-  \item \texttt{tau\_prior\_bm()}
-  \item \texttt{get\_classic\_obj\_bm()}
-  \item \texttt{get\_classic\_obj()}
-  \item \texttt{get\_classic\_ci\_reml()}
-  \item \texttt{get\_classic\_ci\_hk()}
-  \item \texttt{get\_classic\_ci\_hc()}
-  \item \texttt{get\_classic\_ci\_bm()}
-  \item \texttt{get\_classic\_pi\_reml()}
-  \item \texttt{get\_classic\_pi\_hk()}
-  \item \texttt{get\_classic\_interval()}
-  \item \texttt{get\_classic\_intervals()}
-  \item \texttt{get\_p\_value\_functions()}
-  \item \texttt{get\_p\_value\_args()}
-  \item \texttt{get\_new\_ci\_gamma()}
-  \item \texttt{get\_new\_intervals()}
-  \item \texttt{get\_tau2()}
-  \item \texttt{get\_ints\_reml()}
-  \item \texttt{sim2CIs()}
-  \item \texttt{calc\_ci()}
-\end{itemize}
 
-The main function here is \texttt{calc\_ci()}, which calls all the other
-functions internally.
+\subsection{measures2summary.R}
 
-\todo{Describe arguments, explain structure}
 
-\section{cis2measures.R}
-\section{measures2summary.R}
-\section{simulation.R}
+\subsection{plot\_results.R}
 
-%\newpage
-%\bibliographystyle{apalike}
-%\bibliography{biblio.bib}
+
+
+% \subsection{studies2cis.R}
+%
+% \begin{itemize}
+%   \item \texttt{get\_classic\_obj\_hc()}
+%   \item \texttt{get\_classic\_obj\_reml()}
+%   \item \texttt{get\_classic\_obj\_hk()}
+%   \item \texttt{tau\_prior\_bm()}
+%   \item \texttt{get\_classic\_obj\_bm()}
+%   \item \texttt{get\_classic\_obj()}
+%   \item \texttt{get\_classic\_ci\_reml()}
+%   \item \texttt{get\_classic\_ci\_hk()}
+%   \item \texttt{get\_classic\_ci\_hc()}
+%   \item \texttt{get\_classic\_ci\_bm()}
+%   \item \texttt{get\_classic\_pi\_reml()}
+%   \item \texttt{get\_classic\_pi\_hk()}
+%   \item \texttt{get\_classic\_interval()}
+%   \item \texttt{get\_classic\_intervals()}
+%   \item \texttt{get\_p\_value\_functions()}
+%   \item \texttt{get\_p\_value\_args()}
+%   \item \texttt{get\_new\_ci\_gamma()}
+%   \item \texttt{get\_new\_intervals()}
+%   \item \texttt{get\_tau2()}
+%   \item \texttt{get\_ints\_reml()}
+%   \item \texttt{sim2CIs()}
+%   \item \texttt{calc\_ci()}
+% \end{itemize}
+%
+% The main function here is \texttt{calc\_ci()}, which calls all the other
+% functions internally.
+%
+% \todo{Describe arguments, explain structure}
+%
+% \subsection{cis2measures.R}
+%
+% \begin{itemize}
+%   \item \texttt{calc\_coverage\_effects()}
+%   \item \texttt{calc\_coverage\_effects\_min1()}
+%   \item \texttt{calc\_coverage\_effects\_all()}
+%   \item \texttt{calc\_coverage\_prediction()}
+%   \item \texttt{calc\_width()}
+%   \item \texttt{calc\_coverage\_true()}
+%   \item \texttt{calc\_gamma\_min()}
+%   \item \texttt{calc\_score()}
+%   \item \texttt{calc\_n()}
+%   \item \texttt{calc\_sq\_diff()}
+%   \item \texttt{calc\_estimate()}
+%   \item \texttt{get\_measures()}
+%   \item \texttt{CI2measures()}
+%   \item \texttt{calc\_measures()}
+% \end{itemize}
+%
+% \todo{describe arguments, describe structure}
+%
+% \subsection{measures2summary.R}
+%
+% \begin{itemize}
+%   \item \texttt{calc\_coverage\_effects()}
+%   \item \texttt{calc\_coverage\_effects\_min1()}
+%   \item \texttt{calc\_coverage\_effects\_all()}
+%   \item \texttt{calc\_coverage\_prediction()}
+%   \item \texttt{calc\_width()}
+%   \item \texttt{calc\_coverage\_true()}
+%   \item \texttt{calc\_gamma\_min()}
+%   \item \texttt{calc\_score()}
+%   \item \texttt{calc\_n()}
+%   \item \texttt{calc\_sq\_diff()}
+%   \item \texttt{calc\_estimate()}
+%   \item \texttt{get\_measures()}
+%   \item \texttt{CI2measures()}
+%   \item \texttt{calc\_measures()}
+% \end{itemize}
+%
+% \subsection{simulation.R}
+
+\newpage
+\bibliographystyle{apalike}
+\bibliography{biblio.bib}
 
 
 \end{document}
