@@ -48,58 +48,58 @@ error_function <- function(cond, pars, error_obj = NULL, fun_name, i) {
     return(NA)
 }
 
-## These functions just call p_hmean under the hood but fix the argument
-## `distr` to be either `"f"` or `"chisq"`. This is useful because we do not
-## actually need to worry about including `distr = "f"` in the `args` argument
-## when constructing expressions of the form `do.call("p_hmean", args)`.
-## These functions are used in:
-## - sim2CIs
-hMeanChiSqMu_f <- function(
-    estimates,
-    SEs,
-    mu = 0,
-    phi = NULL,
-    tau2 = NULL,
-    heterogeneity = "none",
-    alternative = "none",
-    check_inputs = TRUE,
-    w = rep(1, length(estimates))
-) {
-    confMeta::p_hmean(
-        estimates = estimates,
-        SEs = SEs,
-        mu = mu,
-        phi = phi,
-        tau2 = tau2,
-        heterogeneity = heterogeneity,
-        alternative = alternative,
-        check_inputs = check_inputs,
-        w = w,
-        distr = "f"
-    )
-}
-
-hMeanChiSqMu_chisq <- function(
-    estimates,
-    SEs,
-    mu = 0,
-    phi = NULL,
-    tau2 = NULL,
-    heterogeneity = "none",
-    alternative = "none",
-    check_inputs = TRUE,
-    w = rep(1, length(estimates))
-) {
-    confMeta::p_hmean(
-        estimates = estimates,
-        SEs = SEs,
-        mu = mu,
-        phi = phi,
-        tau2 = tau2,
-        heterogeneity = heterogeneity,
-        alternative = alternative,
-        check_inputs = check_inputs,
-        w = w,
-        distr = "chisq"
-    )
-}
+# ## These functions just call p_hmean under the hood but fix the argument
+# ## `distr` to be either `"f"` or `"chisq"`. This is useful because we do not
+# ## actually need to worry about including `distr = "f"` in the `args` argument
+# ## when constructing expressions of the form `do.call("p_hmean", args)`.
+# ## These functions are used in:
+# ## - sim2CIs
+# hMeanChiSqMu_f <- function(
+#     estimates,
+#     SEs,
+#     mu = 0,
+#     phi = NULL,
+#     tau2 = NULL,
+#     heterogeneity = "none",
+#     alternative = "none",
+#     check_inputs = TRUE,
+#     w = rep(1, length(estimates))
+# ) {
+#     confMeta::p_hmean(
+#         estimates = estimates,
+#         SEs = SEs,
+#         mu = mu,
+#         phi = phi,
+#         tau2 = tau2,
+#         heterogeneity = heterogeneity,
+#         alternative = alternative,
+#         check_inputs = check_inputs,
+#         w = w,
+#         distr = "f"
+#     )
+# }
+#
+# hMeanChiSqMu_chisq <- function(
+#     estimates,
+#     SEs,
+#     mu = 0,
+#     phi = NULL,
+#     tau2 = NULL,
+#     heterogeneity = "none",
+#     alternative = "none",
+#     check_inputs = TRUE,
+#     w = rep(1, length(estimates))
+# ) {
+#     confMeta::p_hmean(
+#         estimates = estimates,
+#         SEs = SEs,
+#         mu = mu,
+#         phi = phi,
+#         tau2 = tau2,
+#         heterogeneity = heterogeneity,
+#         alternative = alternative,
+#         check_inputs = check_inputs,
+#         w = w,
+#         distr = "chisq"
+#     )
+# }
