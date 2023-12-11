@@ -246,10 +246,13 @@ list \texttt{o}.
   font=\footnotesize] {1. Simulate one data\\ set using \texttt{pars}};
 \node (tau) [most, align=left, below of=sim, font=\footnotesize] {
   2. Estimate $\tau^2$ with all\\ heterogeneity estimation\\ methods};
-\node (ci) [most, below of=tau, font=\footnotesize] {3. Calculate CIs with all
-  methods for all $\tau^2$};
-\node (meas) [most, below of=ci, font=\footnotesize] {4. Calculate
-  performance measures};
+\node (ci) [most,align=left, below of=tau, font=\footnotesize, yshift=-0.5cm] {
+  3. Calculate CIs with methods \emph{Edgington},\\ \emph{Fisher},
+  and \emph{Random effects} for all $\tau^2$,\\
+  with methods \emph{Hartung-Knapp} and\\ \emph{Henmi-Copas}
+  only for estimation\\ method \emph{REML}};
+\node (meas) [most, below of=ci, font=\footnotesize, yshift=-0.5cm] {5.
+  Calculate performance measures};
 \node (store) [most, align=left, below of=meas, font=\footnotesize] {
   5. Store performance measures\\ in variables \texttt{av},
   \texttt{p\_accept}};
@@ -357,8 +360,8 @@ other functions throughout the simulation.
 \paragraph{Note: parallel execution}\mbox{}\\
 The simulation uses the \pkg{foreach}-package \citep{foreach} as a parallel
 backend with the \pkg{doRNG}-package for ensuring that the random numbers
-generated inside different for loops are independent and reproducible. This
-setup has, however, the drawback that without manual error handling, the
+generated inside different \texttt{for} loops are independent and reproducible.
+This setup has, however, the drawback that without manual error handling, the
 simulation continues exection until all scenarios finished, even if some of the
 loops throw errors. This is, of course, rather undesirable since the simulation
 might run for a long time even if there are errors already in the first few
@@ -418,95 +421,244 @@ The file contains the definitions of the following functions.
     \texttt{error\_function()} such that the error is documented.
 \end{description}
 
+In the simulation, we exclusively use the function \texttt{sim\_effects()} as
+shown below:
+
+<<>>=
+# define the grid
+grid <- expand.grid(
+    # sample size of trial
+    sampleSize = 50,
+    # average effect, impacts selection bias
+    effect = c(0.1, 0.2, 0.5),
+    # Higgin's I^2 heterogeneity measure
+    I2 = c(0, 0.3, 0.6, 0.9),
+    # number of studies
+    k = c(3, 5, 10, 20, 50),
+    # The heterogeneity model that the studies are simulated from
+    heterogeneity = c("additive"),
+    # distribution
+    dist = c("Gaussian", "t"),
+    # bias
+    bias = c("none", "moderate", "strong"),
+    # number of large studies
+    large = c(0, 1, 2),
+    stringsAsFactors = FALSE
+)
+# get a set of parameters
+print(pars <- grid[324, ])
+# simulate studies
+print(studies <- sim_effects(pars, i = 1))
+@
+
+
 \subsection{studies2cis.R}
 
-The file \emph{studies2cis.R} contains the functionality to convert a
-simulated meta-analysis data set into the CIs. The idea here is to
+<<studies2cis, include=FALSE>>=
+source("studies2cis.R")
+@
 
+
+The file \emph{studies2cis.R} contains the functionality to convert a
+simulated meta-analysis data set into CIs, the point estimate, and the maximum
+$p$-value function, if applicable. Since we needed to implement this
+functionality for all different methods, this file contains a comparatively
+large number of functions. Thus, instead of listing every single function and
+describing what it does, I will rather focus on the structure of how the
+necessary function is implemented.
+
+\subsubsection{Estimating heterogeneity}
+
+In order to estimate the between-study heterogeneity $\tau^2$ with all of the
+heterogeneity estimation method, the simulation includes the function
+\texttt{get\_tau2()}.
+
+\subsubsection{Reference methods}
+
+Since we use external libraries for the calculation of CIs and point estimates
+for methods \emph{Random effects} (\pkg{meta}), \emph{Hartung-Knapp} (\pkg{meta})
+and \emph{Henmi-Copas} (\pkg{metafor}), the file contains wrapper functions for
+these libraries. All of these libraries follow the same pattern, \ie, they
+provide a function of the simulated estimates and the simulated standard
+estimates in the meta-analysis data set and return a resulting object, from
+which the CI and point estimate can be extracted. Thus, the extraction of the
+CI and estimate is essentially only a function of the desired method, the
+simulated study effects, and the corresponding standard errors.
+
+\vspace*{0.5cm}
+
+This idea is implemented in the function \texttt{get\_classic\_intervals()},
+which takes three arguments, \texttt{methods}, \texttt{thetahat}, \texttt{se}.
+Here, \texttt{methods} can be any combination of \texttt{"hk\_ci"} (for
+\emph{Hartung-Knapp}), \texttt{"hc\_ci"} (for \emph{Henmi-Copas}),
+\texttt{"reml\_ci"} (for \emph{Random effects}). The arguments \texttt{thetahat}
+and \texttt{se} are just the simulated studies and the corresponding standard
+errors from the simulation step. Internally, \texttt{get\_classic\_intervals()}
+determines, what kind of object it needs to fit for each of the different
+\texttt{methods} and how to extract the desired statistics.
+
+\vspace*{0.5cm}
+
+The internal implementation consists of functions
+\texttt{get\_classic\_obj\_xx()} where \texttt{xx} is either \texttt{hc},
+\texttt{reml} or \texttt{hc}. There is also a function for \texttt{bm}, which
+corresponds to the \emph{bayesmeta} method, but that is currently not used. All
+of these functions accept an argument \texttt{thetahat} and \texttt{se} and
+return an object. Moreover, these functions are summarised in
+\texttt{get\_classic\_obj()} which, depending on the \texttt{method} argument
+calls one of the former functions.
+
+\vspace*{0.5cm}
+
+Similarly, there is a function \texttt{get\_classic\_interval()}, which calls,
+depending on the \texttt{method} argument, one of the functions
+\texttt{get\_classic\_yy\_xx()}, where \texttt{yy} is either \texttt{ci} (for CI)
+or \texttt{pi} (for prediction interval (PI)) and \texttt{xx} is again one of
+\texttt{hc}, \texttt{hk}, or \texttt{reml}. This can be used as shown in the
+following code chunk.
+
+<<>>=
+# fit an object using Hartung-Knapp and extract the confidence interval
+get_classic_interval(
+    # alternatively, this could also be "hk_pi" for prediction interval
+    method = "hk_ci",
+    obj = get_classic_obj(
+        method = "hk",
+        thetahat = studies[, "theta"],
+        se = studies[, "se"]
+    )
+)
+@
+
+\subsubsection{Methods of interest}
+
+The implementation of the $p$-value functions and the algorithm that calculates
+the CIs and point estimates can be found in the package \pkg{confMeta}. However,
+this simulation also provides several wrappers for the confMeta functionality.
+
+The most two most basic functions are \texttt{get\_p\_value\_functions()}, which
+returns a list of all the $p$-value functions that should be present in the
+simulation, and \texttt{get\_p\_value\_args()}, which returns a list of argument
+configurations that are passed to the $p$-value functions.
+
+The function \texttt{get\_new\_ci\_gamma()} calculates a grid from the lists
+returned by the two functions above, loops over this list and calculates for
+each argument/function combination the CI and the point estimate.
+
+The function \texttt{get\_new\_intervals()} combines all the above functions and
+serves as the main function to calculates everything of interest related to the
+methods of interest.
+
+
+\subsubsection{Assembling the output}
+
+The main function for this step in the simulation is called \texttt{calc\_ci()}
+which itself wraps \texttt{sim2CIs()}. The latter calculates the CIs and point
+estimates for the reference methods and the methods of interests for all
+possible argument configurations and returns a list with elements
+
+\begin{description}
+    \item[CIs] A \texttt{data.frame} containing the confidence interval for each
+        method/argument combination. It also contains the variables
+        \texttt{is\_new}, \texttt{is\_ci}, and \texttt{is\_pi}, which all
+        contain logical values \texttt{TRUE} or \texttt{FALSE}. These are
+        important in the next step to determine which performance maesures need
+        to be calculated for a given CI.
+    \item[estimates] A \texttt{data.frame} containing the point estimates for
+        each method/argument combination.
+    \item[p\_max] A \texttt{data.frame} containing the maximum of the $p$-value
+        function for each method/argument combination.
+    \item[model] The simulation model that the meta-analysis data set was
+        simulated from. This is the same as \texttt{pars\$heterogeneity} and is
+        independent of the \texttt{heterogeneity} argument of any $p$-value
+        function used here.
+    \item[theta] The simulated effects of the individual studies in the
+        meta-analysis data set. This is the same as the column \texttt{"theta"}
+        from the meta-analysis data set.
+    \item[delta] The study-specific effects in the meta-analysis data set. This
+        is the same as the column \texttt{"delta"} from the meta-analysis data
+        set.
+    \item[effect] The true effect used for the simulation of the meta-analysis
+        data set. This is the same as \texttt{pars\$effect} for the current
+        iteration.
+\end{description}
 
 \subsection{cis2measures.R}
 
+The file \emph{cis2measures.R} contains functionality to convert the output of
+function \texttt{calc\_ci()} to the performance measures stated in
+Subsection~\ref{subsec:term}. The main function here is called
+\texttt{calc\_measures()}, which wraps \texttt{CI2measures()} and, in case of an
+error, runs the \texttt{error\_function()}.
+
+\vspace*{0.5cm}
+
+Internally, we first determine, which performance measure needs to be calculated
+for a given CI. This is done by looking at the combination of booleans in the
+variables \texttt{is\_new}, \texttt{is\_ci}, and \texttt{is\_pi} in function
+\texttt{get\_measures()}. This function returns a list, that contains all the
+functions needed to calculate the performance measures for the given CI.
+Currently, we use the following functions to calculate the performance measures:
+
+\begin{description}
+  \item[\texttt{calc\_coverage\_true()}] Calculates the coverage of the true
+      effect $\theta$. Thus, the return is 1, if $\theta \in \text{CI}$ and 0
+      otherwise. This is done for all CIs.
+  \item[\texttt{calc\_width()}] Calculates the width of the CI. This is done for
+      all CIs.
+  \item[\texttt{calc\_score()}] Calculates the score of the CI. This is done for
+      all CIs.
+  \item[\texttt{calc\_n()}] Calculates the number of confidence intervals. This
+      is only done for CIs from methods of interest, \ie, where \texttt{is\_new
+        == TRUE}.
+  \item[\texttt{calc\_estimate()}] Simply returns the point estimate itself.
+\end{description}
+
+The main output of the function \texttt{calc\_ci()} is a \texttt{data.frame}
+with columns
+
+\begin{description}
+    \item[value] The value of the performance measure.
+    \item[measure] The name of the performance measure.
+    \item[method] The name of the CI construction method.
+    \item[is\_ci] Whether the current interval is a CI.
+    \item[is\_pi] Whether the current interval is a PI.
+    \item[is\_new] Whether the construction method is a method of interest.
+\end{description}
 
 \subsection{measures2summary.R}
+
+This script contains the functionality needed to summarise the performance
+measures to summary measures. Again, the wrapper function is
+\texttt{calc\_summary\_measures()} which calls \texttt{get\_summary\_measures()}
+or, in case of an error, \texttt{error\_function()}.
+
+\vspace*{0.5cm}
+
+Internally, we use the following functions to summarise the performance
+measures.
+
+\begin{description}
+    \item[\texttt{get\_mean\_stats()}] Calculates the mean across all
+        performance measures of the same method.
+    \item[\texttt{get\_gamma\_stats()}] Calculates the maximum, third quartile,
+        median, mean, first quartile, and minimum across the performance measure
+        \emph{n}, \ie, the number of CIs.
+    \item[\texttt{get\_n\_stats()}] Calculates how often the number of CIs is
+        equal to $\{0, \dots, 9\}$ or $> 9$.
+    \item[\texttt{get\_bias\_var\_stats()}] Calculates the mean squared error,
+        bias and variance from the point estimates of each method.
+    \item[\texttt{get\_paccept\_stats()}] Calculates the mean of the average
+        acceptance probability. This is only done in case the current parameters
+        have a bias which is not \texttt{"none"}.
+\end{description}
 
 
 \subsection{plot\_results.R}
 
+This script does is not a part of the simulation itself, but it visualizes the
+results of the simulation used to visualise the results.
 
-
-% \subsection{studies2cis.R}
-%
-% \begin{itemize}
-%   \item \texttt{get\_classic\_obj\_hc()}
-%   \item \texttt{get\_classic\_obj\_reml()}
-%   \item \texttt{get\_classic\_obj\_hk()}
-%   \item \texttt{tau\_prior\_bm()}
-%   \item \texttt{get\_classic\_obj\_bm()}
-%   \item \texttt{get\_classic\_obj()}
-%   \item \texttt{get\_classic\_ci\_reml()}
-%   \item \texttt{get\_classic\_ci\_hk()}
-%   \item \texttt{get\_classic\_ci\_hc()}
-%   \item \texttt{get\_classic\_ci\_bm()}
-%   \item \texttt{get\_classic\_pi\_reml()}
-%   \item \texttt{get\_classic\_pi\_hk()}
-%   \item \texttt{get\_classic\_interval()}
-%   \item \texttt{get\_classic\_intervals()}
-%   \item \texttt{get\_p\_value\_functions()}
-%   \item \texttt{get\_p\_value\_args()}
-%   \item \texttt{get\_new\_ci\_gamma()}
-%   \item \texttt{get\_new\_intervals()}
-%   \item \texttt{get\_tau2()}
-%   \item \texttt{get\_ints\_reml()}
-%   \item \texttt{sim2CIs()}
-%   \item \texttt{calc\_ci()}
-% \end{itemize}
-%
-% The main function here is \texttt{calc\_ci()}, which calls all the other
-% functions internally.
-%
-% \todo{Describe arguments, explain structure}
-%
-% \subsection{cis2measures.R}
-%
-% \begin{itemize}
-%   \item \texttt{calc\_coverage\_effects()}
-%   \item \texttt{calc\_coverage\_effects\_min1()}
-%   \item \texttt{calc\_coverage\_effects\_all()}
-%   \item \texttt{calc\_coverage\_prediction()}
-%   \item \texttt{calc\_width()}
-%   \item \texttt{calc\_coverage\_true()}
-%   \item \texttt{calc\_gamma\_min()}
-%   \item \texttt{calc\_score()}
-%   \item \texttt{calc\_n()}
-%   \item \texttt{calc\_sq\_diff()}
-%   \item \texttt{calc\_estimate()}
-%   \item \texttt{get\_measures()}
-%   \item \texttt{CI2measures()}
-%   \item \texttt{calc\_measures()}
-% \end{itemize}
-%
-% \todo{describe arguments, describe structure}
-%
-% \subsection{measures2summary.R}
-%
-% \begin{itemize}
-%   \item \texttt{calc\_coverage\_effects()}
-%   \item \texttt{calc\_coverage\_effects\_min1()}
-%   \item \texttt{calc\_coverage\_effects\_all()}
-%   \item \texttt{calc\_coverage\_prediction()}
-%   \item \texttt{calc\_width()}
-%   \item \texttt{calc\_coverage\_true()}
-%   \item \texttt{calc\_gamma\_min()}
-%   \item \texttt{calc\_score()}
-%   \item \texttt{calc\_n()}
-%   \item \texttt{calc\_sq\_diff()}
-%   \item \texttt{calc\_estimate()}
-%   \item \texttt{get\_measures()}
-%   \item \texttt{CI2measures()}
-%   \item \texttt{calc\_measures()}
-% \end{itemize}
-%
-% \subsection{simulation.R}
 
 \newpage
 \bibliographystyle{apalike}
