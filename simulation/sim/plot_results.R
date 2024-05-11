@@ -173,8 +173,8 @@ out_pubbias <- out %>%
 
 # Set output directory -----
 # out_dir <- "~/test/Institution/harmonic_mean/figs_new"
-out_dir <- "~/ownCloud/Institution/harmonic_mean/test"
-
+# out_dir <- "~/ownCloud/Institution/harmonic_mean/test"
+out_dir <- "newFigures"
 
 # styles for the plots
 th <- theme(
@@ -206,6 +206,7 @@ plotPanels <- function(
     measure <- match.arg(measure)
     by <- match.arg(by)
     plotVar <- match.arg(plotVar, choices = c("value", "prop"))
+#    plotVar <- match.arg(plotVar, choices = c("value"))
 
     if (by == "method") {
         p <- data %>%
@@ -230,19 +231,28 @@ plotPanels <- function(
                         mutate(method = factor(method, levels = order))
                 } else {
                     order <- c(
-                        "Edgington (none) CI",
+                        ## "Edgington (none) CI",
+                        ## "Edgington (REML) CI",
+                        ## "Edgington (DL) CI",
+                        ## "Edgington (PM) CI",
+                        ## "Fisher (none) CI",
+                        ## "Fisher (REML) CI",
+                        ## "Fisher (DL) CI",
+                        ## "Fisher (PM) CI",
+                        ## "Random effects (none) CI",
+                        ## "Random effects (REML) CI",
+                        ## "Random effects (DL) CI",
+                        ## "Random effects (PM) CI",
+                        ## "Hartung & Knapp (REML) CI",
+                        ## "Henmi & Copas (DL) CI"
+##                        "Edgington (none) CI",
                         "Edgington (REML) CI",
-                        "Edgington (DL) CI",
-                        "Edgington (PM) CI",
-                        "Fisher (none) CI",
-                        "Fisher (REML) CI",
-                        "Fisher (DL) CI",
-                        "Fisher (PM) CI",
-                        "Random effects (none) CI",
                         "Random effects (REML) CI",
-                        "Random effects (DL) CI",
-                        "Random effects (PM) CI",
+##                        "Fisher (none) CI",
+                        "Fisher (REML) CI",
                         "Hartung & Knapp (REML) CI",
+##                        "Pearson (none) CI",
+                        "Pearson (REML) CI",
                         "Henmi & Copas (DL) CI"
                     )
                     .[] %>%

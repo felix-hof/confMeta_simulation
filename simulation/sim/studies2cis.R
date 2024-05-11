@@ -513,7 +513,8 @@ sim2CIs <- function(x) {
     # For the new methods, we need phi and tau2 to estimate heterogeneity
     # we estimate phi ourselves and for tau2 we check whether it has already
     # been computed. If not, estimate it ourselves
-    # phi <- confMeta::estimate_phi(estimates = thetahat, SEs = se)
+    ## change Leo April 10 2024
+    phi <- confMeta::estimate_phi(estimates = thetahat, SEs = se)
     # tau2 <- attributes(classic_methods)$tau2
     # if (is.null(tau2)) {
     #     tau2 <- confMeta::estimate_tau2(estimates = thetahat, SEs = se)
@@ -540,7 +541,7 @@ sim2CIs <- function(x) {
                         # "hMeanF_ci",
                         # "hMeanChisq_ci",
                         # "ktrials_ci",
-                        # "pearson_ci",
+                        "pearson_ci",
                         "edgington_ci",
                         "fisher_ci"
                     ),

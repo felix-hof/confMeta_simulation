@@ -28,9 +28,10 @@
 
 ## Setup
 # rm(list = ls())
-remotes::install_github("felix-hof/confMeta")
+##remotes::install_github("felix-hof/confMeta")
+remotes::install_github("SamCH93/confMeta")
 library(confMeta)
-library(doParallel)
+library(doParallel) 
 library(doRNG)
 library(RhpcBLASctl)
 blas_set_num_threads(1) # multi threading of BLAS
@@ -202,7 +203,7 @@ grid <- expand.grid(
     # The heterogeneity model that the studies are simulated from
     heterogeneity = c("additive"),
     # distribution
-    dist = c("Gaussian", "t"),
+    dist = c("Gaussian", "sn"),
     # bias
     bias = c("none", "moderate", "strong"),
     # number of large studies
@@ -218,7 +219,7 @@ grid <- expand.grid(
 
 ## run simulation, e.g., on the Rambo server of I-MATH
 start <- Sys.time()
-out <- sim(grid = grid, N = 2.5e3, cores = 120)
+out <- sim(grid = grid, N = 2.5e3, cores = 200)
 # out <- sim(grid = grid, N = 4, cores = 15)
 end <- Sys.time()
 print(end - start)

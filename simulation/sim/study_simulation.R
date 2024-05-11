@@ -1,7 +1,7 @@
 ################################################################################
 #                    Simulating effects and standard errors                    #
 ################################################################################
-
+# 20240409: LeoUpdate: skewNormal replaces t distribution
 #' Simulate effect estimates and their standard errors using a random effects
 #' model
 #'
@@ -13,7 +13,7 @@
 #' @param I2 Higgin's I^2 heterogeneity measure
 #' @param heterogeneity The heterogeneity model, the studies are simulated from.
 #' Either "additive" or "multiplicative".
-#' @param dist distribution to simulate the study effect. Either "t" or
+#' @param dist distribution to simulate the study effect. Either "sn" or
 #' "Gaussian".
 #' the sample size as specified by \code{sampleSize}.
 #' @return a matrix \code{k} x 2 matrix with columns
@@ -29,6 +29,24 @@ simRE <- function(
     large
 ) {
 
+    myalpha <- 4
+    ## specify mean effect, variance tau2 and shape parameter alpha
+    ## compute parameters xi and omega of skew-normal distribution
+    ## with shape parameter alpha (default = myalpha)
+    paramSN <- function(
+        effect,
+        tau2,
+        alpha = myalpha
+    ) {
+        delta <- alpha / sqrt(1 + alpha^2)
+        omega <- sqrt(tau2) / sqrt(1 - 2 * delta^2 / pi)
+        xi <- effect - omega * delta * sqrt(2/pi)
+        res <- c(xi, omega)
+        names(res) <- c("xi", "omega")
+        return(res)
+    }
+
+
     # get args
     n <- rep(sampleSize, k)
     # include large studies
@@ -37,15 +55,14 @@ simRE <- function(
     if (heterogeneity == "additive") {
         eps2 <- 1 / k * sum(2 / n)
         tau2 <- eps2 * I2 / (1 - I2)
-        if (dist == "t") {
-            ## the sn::rst(xi=0, omega, nu) distribution has variance
-            ## omega^2 nu/(nu-2) (if nu>2)
-            ## where nu is the degrees of freedom (dof).
-            ## So if we want the variance to be tau^2, then
-            ## omega^2 = tau^2 * (nu-2)/nu
-            ## We use nu=4 dof then omega^2 = tau^2/2, so half as
-            ## large as the heterogeneity variance under normality.
-            delta <- sn::rst(n = k, xi = effect, omega = sqrt(tau2 / 2), nu = 4)
+
+        if (dist == "sn") {
+            ## xi: location parameter
+            ## omega: scale parameter
+            ## alpha: slant/shape parameter
+            ## notation from Wikipedia
+            p <- paramSN(effect=effect, tau2=tau2)
+            delta <- sn::rsn(n = k, xi = p["xi"], omega = p["omega"], alpha = myalpha)
         } else {
             delta <- rnorm(n = k, mean = effect, sd = sqrt(tau2))
         }
@@ -55,18 +72,14 @@ simRE <- function(
         phi <- 1 / (1 - I2)
         eps2 <- 1 / k * sum(2 / n)
         tau2 <- eps2 * (phi - 1)
-        if (dist == "t") {
-            ## the sn::rst(xi=0, omega, nu) distribution has variance
-            ## omega^2 nu/(nu-2) (if nu>2)
-            ## where nu is the degrees of freedom (dof).
-            ## So if we want the variance to be tau^2, then
-            ## omega^2 = tau^2 * (nu-2)/nu
-            ## We use nu=4 dof then omega^2 = tau^2/2, so half as
-            ## large as the heterogeneity variance under normality.
-            ## sample sequentially with marginal variance equal to
-            ## (phi-1)*2/n + 2/n = phi*2/n
-            delta <- sn::rst(n = k, xi = effect, omega = sqrt(tau2 / 2), nu = 4)
-        } else {  ## Gaussian, sample directly from marginal
+        if (dist == "sn") {
+            ## xi: location parameter
+            ## omega: scale parameter
+            ## alpha: slant/shape parameter
+            ## notation from Wikipedia
+            p <- paramSN(effect=effect, tau2=tau2)
+            delta <- sn::rsn(n = k, xi = p["xi"], omega = p["omega"], alpha = myalpha)
+        } else {
             delta <- rnorm(n = k, mean = effect, sd = sqrt(tau2))
         }
         theta <- rnorm(n = k, mean = delta, sd = sqrt(2 / n))
@@ -119,7 +132,7 @@ pAccept <- function(theta, se, bias) {
 #' @param I2 Higgin's I^2 heterogeneity measure
 #' @param heterogeneity The heterogeneity model, the studies are simulated from.
 #' Either "additive" or "multiplicative".
-#' @param dist distribution to simulate the study effect. Either "t" or
+#' @param dist distribution to simulate the study effect. Either "sn" or
 #' "Gaussian".
 #' @param large A number in \code{c(0,1,2)} indicating the number of studies
 #' that have ten times the sample size as specified by \code{sampleSize}.
@@ -148,7 +161,7 @@ simREbias <- function(
     effect,
     I2,
     heterogeneity = c("additive", "multiplicative"),
-    dist = c("t", "Gaussian"),
+    dist = c("sn", "Gaussian"),
     large,
     bias = c("none", "moderate", "strong"),
     verbose = TRUE,
