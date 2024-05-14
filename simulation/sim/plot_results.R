@@ -128,12 +128,12 @@ out <- out |>
     )
 
 # Prepare data (meanplots) ----
-out_meanplots <- out %>%
+out_meanplots <- out |>
     filter(usage == "mean_plot")
 
 # Prepare data (gammamax) ----
-out_gammamax <- out %>%
-    filter(usage == "summary_stat_plot") %>%
+out_gammamax <- out |>
+    filter(usage == "summary_stat_plot") |>
     mutate(
         measure = case_when(
             stat_fun == "min" ~ "Minimum",
@@ -151,12 +151,12 @@ out_gammamax <- out %>%
                 "1. Quartile", "Minimum"
             )
         )
-    ) %>%
+    ) |>
     arrange(k, dist, bias, large, heterogeneity, I2, method, measure)
 
 # Prepare data (frequency) ----
-out_n <- out %>%
-    filter(usage == "n_plot") %>%
+out_n <- out |>
+    filter(usage == "n_plot") |>
     mutate(
         measure = gsub("gt", "> ", stat_fun),
         measure = ordered(measure, levels = rev(c("> 9", as.character(9:0)))),
@@ -164,11 +164,11 @@ out_n <- out %>%
     )
 
 # Prepare data (summary) ----
-out_sum <- out_meanplots %>%
+out_sum <- out_meanplots |>
     filter(grepl("coverage", measure))
 
 # Prepare data (summary) ----
-out_pubbias <- out %>%
+out_pubbias <- out |>
     filter(usage == "paccept_plot")
 
 # Set output directory -----
@@ -206,7 +206,7 @@ plotPanels <- function(
     measure <- match.arg(measure)
     by <- match.arg(by)
     plotVar <- match.arg(plotVar, choices = c("value", "prop"))
-#    plotVar <- match.arg(plotVar, choices = c("value"))
+    # plotVar <- match.arg(plotVar, choices = c("value"))
 
     if (by == "method") {
         p <- data %>%
@@ -226,8 +226,8 @@ plotPanels <- function(
                         "Fisher Additive CI",
                         "Fisher Multiplicative CI"
                     )
-                    .[] %>%
-                        filter(method %in% order) %>%
+                    .[] |>
+                        filter(method %in% order) |>
                         mutate(method = factor(method, levels = order))
                 } else {
                     order <- c(
@@ -245,21 +245,21 @@ plotPanels <- function(
                         ## "Random effects (PM) CI",
                         ## "Hartung & Knapp (REML) CI",
                         ## "Henmi & Copas (DL) CI"
-##                        "Edgington (none) CI",
+                        ## "Edgington (none) CI",
                         "Edgington (REML) CI",
                         "Random effects (REML) CI",
-##                        "Fisher (none) CI",
+                        ## "Fisher (none) CI",
                         "Fisher (REML) CI",
                         "Hartung & Knapp (REML) CI",
-##                        "Pearson (none) CI",
+                        ## "Pearson (none) CI",
                         "Pearson (REML) CI",
                         "Henmi & Copas (DL) CI"
                     )
-                    .[] %>%
-                        filter(method %in% order) %>%
+                    .[] |>
+                        filter(method %in% order) |>
                         mutate(method = factor(method, levels = order))
                 }
-            } %>%
+            } |>
             ggplot(
                 mapping = aes(x = k, y = eval(as.name(plotVar)), color = I2)
             ) +
@@ -276,8 +276,8 @@ plotPanels <- function(
         }
     }
     if (by == "I2") {
-        p <- data %>%
-            mutate(I2 = as.character(I2)) %>%
+        p <- data |>
+            mutate(I2 = as.character(I2)) |>
             ggplot(mapping = aes(x = k, y = value, color = method)) +
             facet_wrap(~ I2, labeller = label_bquote(I^2 == .(I2))) +
             geom_point() +
@@ -308,13 +308,13 @@ for (i in unique(out_meanplots$measure)) {
 }
 
 opts <- list(
-    dist = out_meanplots %>% pull(dist) %>% unique(),
-    bias = out_meanplots %>% pull(bias) %>% unique(),
-    large = out_meanplots %>% pull(large) %>% unique(),
-    effect = out_meanplots %>% pull(effect) %>% unique() #,
-    # heterogeneity = out_meanplots %>% pull(heterogeneity) %>% unique()
+    dist = out_meanplots |> pull(dist) |> unique(),
+    bias = out_meanplots |> pull(bias) |> unique(),
+    large = out_meanplots |> pull(large) |> unique(),
+    effect = out_meanplots |> pull(effect) |> unique() #,
+    # heterogeneity = out_meanplots |> pull(heterogeneity) |> unique()
 )
-measure_opts <- out_meanplots %>% pull(measure) %>% unique()
+measure_opts <- out_meanplots |> pull(measure) |> unique()
 
 list_seq <- seq_along(opts)
 
@@ -345,19 +345,19 @@ for (x in list_seq) { # loop over summary (eg. dist)
                 expr(`!!`(op)(!!sym(lhs), !!rhs))
             }
         )
-        img_data <- out_meanplots %>% filter(!!!filters)
+        img_data <- out_meanplots |> filter(!!!filters)
         for (me in measure_opts) { # loop over different measures
-            img_data_me_ss <- img_data %>% filter(measure == me)
+            img_data_me_ss <- img_data |> filter(measure == me)
             img_data_me_val <- img_data_me_ss |> filter(!is.na(value))
             ll <- list(
                 "value" = list(
                     data = img_data_me_val,
                     plotVar = "value"
-                ),
-                "ss" = list(
-                    data = img_data_me_ss,
-                    plotVar = "prop"
-                )
+                )#,
+                # "ss" = list(
+                #     data = img_data_me_ss,
+                #     plotVar = "prop"
+                # )
             )
             out <- lapply(
                 ll,
@@ -369,19 +369,19 @@ for (x in list_seq) { # loop over summary (eg. dist)
                         current_levels,
                         function(z, l, current, me, th) {
                             # title
-                            title <- l$data %>%
+                            title <- l$data |>
                                 select(
                                     -k, -I2, -method, -measure,
                                     -value, -all_of(current),
                                     -sampleSize, -usage, -stat_fun,
                                     -is_ci, -is_pi, -is_new, -prop
-                                ) %>%
-                                distinct() %>%
+                                ) |>
+                                distinct() |>
                                 bind_cols(!!current := z) %>%
-                                select(order(colnames(.))) %>%
+                                select(order(colnames(.))) |>
                                 make_title()
-                            p <- l$data %>%
-                                filter(!!sym(current) == z) %>%
+                            p <- l$data |>
+                                filter(!!sym(current) == z) |>
                                 plotPanels(
                                     measure = me,
                                     by = "method",
@@ -473,6 +473,10 @@ ord <- c(
     "Fisher (REML) CI",
     "Fisher (DL) CI",
     "Fisher (PM) CI",
+    "Pearson (none) CI",
+    "Pearson (REML) CI",
+    "Pearson (DL) CI",
+    "Pearson (PM) CI",
     "Random effects (none) CI",
     "Random effects (REML) CI",
     "Random effects (DL) CI",
@@ -481,8 +485,6 @@ ord <- c(
 
 ## For now, subset to only those methods we actually want plots of
 # out_gammamax <- subset(out_gammamax, method %in% ord)
-
-
 
 for (x in list_seq) { # loop over summary (eg. dist)
     current <- names(opts)[x]
@@ -506,19 +508,19 @@ for (x in list_seq) { # loop over summary (eg. dist)
             rhs <- grid_others[y, z]
             expr(`!!`(op)(!!sym(lhs), !!rhs))
         })
-        img_data_ss <- out_gammamax %>%
-            filter(!!!filters) %>%
+        img_data_ss <- out_gammamax |>
+            filter(!!!filters) |>
             mutate(method = factor(method, levels = ord))
         img_data_val <- img_data_ss |> filter(!is.na(value))
         ll <- list(
             "value" = list(
                 data = img_data_val,
                 plotVar = "value"
-            ),
-            "ss" = list(
-                data = img_data_ss,
-                plotVar = "prop"
-            )
+            ) #,
+            # "ss" = list(
+            #     data = img_data_ss,
+            #     plotVar = "prop"
+            # )
         )
         out <- lapply(
             ll,
@@ -530,19 +532,19 @@ for (x in list_seq) { # loop over summary (eg. dist)
                     current_levels,
                     function(z, l, current, th) {
                         # title
-                        title <- l$data %>%
+                        title <- l$data |>
                             select(
                                 -k, -I2, -method, -measure,
                                 -value, -all_of(current),
                                 -sampleSize, -usage, -stat_fun,
                                 -is_ci, -is_pi, -is_new, -prop
-                            ) %>%
-                            distinct() %>%
+                            ) |>
+                            distinct() |>
                             bind_cols(!!current := z) %>%
-                            select(order(colnames(.))) %>%
+                            select(order(colnames(.))) |>
                             make_title()
-                        l$data %>%
-                            filter(!!sym(current) == z) %>%
+                        l$data |>
+                            filter(!!sym(current) == z) |>
                             ggplot(
                                 aes(
                                     x = k,
@@ -594,7 +596,8 @@ for (x in list_seq) { # loop over summary (eg. dist)
             ),
             ".png"
         )
-        filename <- file.path(out_path, fname)
+        # filename <- file.path(out_path, fname)
+        filename <- fname
         cat("\33[2K\rMaking file: ", filename)
         ggsave(
             filename = filename,
@@ -712,26 +715,26 @@ for (x in list_seq) {
             rhs <- grid_others[y, z]
             expr(`!!`(op)(!!sym(lhs), !!rhs))
         })
-        img_data <- out_n %>%
-            filter(!!!filters) %>%
+        img_data <- out_n |>
+            filter(!!!filters) |>
             mutate(
                 method = factor(method, levels = ord)
             )
         lapply(current_levels, function(z) {
-            title <- img_data %>%
-                filter(!!sym(current) == z) %>%
+            title <- img_data |>
+                filter(!!sym(current) == z) |>
                 select(
                     -method, -measure, -value,
                     -all_of(current), -sampleSize,
                     -usage, -stat_fun, -is_ci, -is_pi,
                     -is_new
-                ) %>%
-                distinct() %>%
-                bind_cols(!!current := z) %>%
-                select(order(colnames(.))) %>%
+                ) |>
+                distinct() |>
+                bind_cols(!!current := z) |>
+                select(order(colnames(.))) |>
                 make_title()
-            img_data %>%
-                filter(!!sym(current) == z) %>%
+            img_data |>
+                filter(!!sym(current) == z) |>
                 ggplot(aes(x = measure, y = value)) +
                 geom_col(fill = viridisLite::viridis(1)) +
                 ylim(c(0, 1)) +
@@ -741,7 +744,7 @@ for (x in list_seq) {
                     y = "relative frequency",
                     title = eval(title)
                 )
-        }) %>%
+        }) |>
             wrap_plots(guides = "collect") &
             theme(
                 legend.position = "bottom",
@@ -782,13 +785,13 @@ for (i in unique(out_pubbias$measure))
     dir.create(file.path(out_path, i), showWarnings = FALSE)
 
 opts <- list(
-    dist = out_pubbias %>% pull(dist) %>% unique(),
-    bias = out_pubbias %>% pull(bias) %>% unique(),
-    large = out_pubbias %>% pull(large) %>% unique(),
-    effect = out_pubbias %>% pull(effect) %>% unique() #,
-    # heterogeneity = out_pubbias %>% pull(heterogeneity) %>% unique()
+    dist = out_pubbias |> pull(dist) |> unique(),
+    bias = out_pubbias |> pull(bias) |> unique(),
+    large = out_pubbias |> pull(large) |> unique(),
+    effect = out_pubbias |> pull(effect) |> unique() #,
+    # heterogeneity = out_pubbias |> pull(heterogeneity) |> unique()
 )
-measure_opts <- out_pubbias %>% pull(measure) %>% unique()
+measure_opts <- out_pubbias |> pull(measure) |> unique()
 
 list_seq <- seq_along(opts)
 
@@ -815,27 +818,27 @@ for (x in list_seq) { # loop over summary (eg. dist)
             rhs <- grid_others[y, z]
             expr(`!!`(op)(!!sym(lhs), !!rhs))
         })
-        img_data <- out_pubbias %>% filter(!!!filters)
+        img_data <- out_pubbias |> filter(!!!filters)
         me <- "p_accept"
         # for (me in measure_opts) { # loop over different measures
-            img_data_me <- img_data %>% filter(measure == me)
+            img_data_me <- img_data |> filter(measure == me)
             ylim <- with(img_data_me, c(min(value), max(value)))
             lapply(
                 current_levels,
                 function(z) {
-                    title <- img_data_me %>%
+                    title <- img_data_me |>
                         select(
                             -k, -I2, -method, -measure,
                             -value, -all_of(current),
                             -sampleSize, -usage, -stat_fun,
                             -is_ci, -is_pi, -is_new
-                        ) %>%
-                        distinct() %>%
-                        bind_cols(!!current := z) %>%
-                        select(order(colnames(.))) %>%
+                        ) |>
+                        distinct() |>
+                        bind_cols(!!current := z) |>
+                        select(order(colnames(.))) |>
                         make_title()
-                    img_data_me %>%
-                        filter(!!sym(current) == z) %>%
+                    img_data_me |>
+                        filter(!!sym(current) == z) |>
                         ggplot(aes(x = k, y = value, color = I2)) +
                         geom_point() +
                         stat_summary(
@@ -853,7 +856,7 @@ for (x in list_seq) { # loop over summary (eg. dist)
                             plot.title = element_text(size = 10)
                         )
                 }
-            ) %>%
+            ) |>
                 wrap_plots(guides = "collect") &
                 theme(legend.position = "bottom")
             filename <- paste0(
@@ -931,9 +934,9 @@ for (x in list_seq) { # loop over summary (eg. dist)
 # }
 #
 # for (x in opts$meas) {
-#     data <- out_sum %>%
-#         filter(measure == x) %>%
-#         group_by(k, bias, I2, method, effect, heterogeneity) %>%
+#     data <- out_sum |>
+#         filter(measure == x) |>
+#         group_by(k, bias, I2, method, effect, heterogeneity) |>
 #         summarise(
 #             mean_value = mean(value),
 #             max_value = max(value),
@@ -965,8 +968,8 @@ for (x in list_seq) { # loop over summary (eg. dist)
 #         methods <- method_order[method_order %in% methods]
 #         # make plots
 #         plots <- lapply(seq_along(methods), function(z) {
-#             out %>%
-#                 filter(method == methods[z]) %>%
+#             out |>
+#                 filter(method == methods[z]) |>
 #                 mutate(
 #                     k = factor(k),
 #                     I2 = factor(I2),
@@ -974,7 +977,7 @@ for (x in list_seq) { # loop over summary (eg. dist)
 #                         bias,
 #                         levels = c("none", "moderate", "strong")
 #                     )
-#                 ) %>%
+#                 ) |>
 #                 ggplot(aes(x = k, y = mean_value, color = I2, group = I2)) +
 #                 geom_line() +
 #                 geom_point() +
@@ -988,7 +991,7 @@ for (x in list_seq) { # loop over summary (eg. dist)
 #                 theme_bw() +
 #                 theme(legend.position = "bottom") +
 #                 labs(y = methods[z])
-#         }) %>%
+#         }) |>
 #             wrap_plots(., guides = "collect", nrow = length(.)) +
 #             plot_annotation(title = totitle(x)) &
 #             theme(legend.position = "bottom")

@@ -28,8 +28,8 @@
 
 ## Setup
 # rm(list = ls())
-##remotes::install_github("felix-hof/confMeta")
-remotes::install_github("SamCH93/confMeta")
+remotes::install_github("felix-hof/confMeta")
+# remotes::install_github("SamCH93/confMeta")
 library(confMeta)
 library(doParallel) 
 library(doRNG)
