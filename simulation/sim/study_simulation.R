@@ -29,7 +29,7 @@ simRE <- function(
     large
 ) {
 
-    alpha <- 4
+    alpha <- 8
     ## specify mean effect, variance tau2 and shape parameter alpha
     ## compute parameters xi and omega of skew-normal distribution
     ## with shape parameter alpha (default = myalpha)
@@ -61,7 +61,7 @@ simRE <- function(
             ## omega: scale parameter
             ## alpha: slant/shape parameter
             ## notation from Wikipedia
-            p <- paramSN(effect = effect, tau2 = tau2, alpha = myalpha)
+            p <- paramSN(effect = effect, tau2 = tau2, alpha = alpha)
             delta <- sn::rsn(n = k, xi = p["xi"], omega = p["omega"], alpha = alpha)
         } else {
             delta <- rnorm(n = k, mean = effect, sd = sqrt(tau2))
