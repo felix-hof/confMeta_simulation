@@ -2,6 +2,24 @@
 #            Calculating the output measures for each individual CI            #
 ################################################################################
 
+# Calculate the skewness from the confidence intervals
+calc_ci_skewness <- function(cis, estimates, ci_exists) {
+    if (!ci_exists) {
+        NA_real_
+    } else {
+        up <- cis[, "upper"]
+        low <- cis[, "lower"]
+        est <- estimates
+        (up + low - 2 * est) / (up - low)
+    }
+}
+
+# Dummy function fro adding the skewness calculated from the data
+# this was calculated before already
+add_data_skewness <- function(data_skewness) {
+    data_skewness
+}
+
 calc_coverage_effects <- function(cis, delta, ci_exists) {
     # if ci does not exist
     if (!ci_exists) {
@@ -185,6 +203,16 @@ get_measures <- function(is_ci, is_pi, is_new) {
                 ci_exists = ci_exists
             )
         }),
+        ci_skewness = quote({
+            calc_ci_skewness(
+                cis = cis,
+                estimates = estimates,
+                ci_exists = ci_exists
+            )
+        }),
+        data_skewness = quote({
+            add_data_skewness(data_skewness = data_skewness)
+        }),
         width = quote({
             calc_width(
                 cis = cis,
@@ -232,6 +260,8 @@ get_measures <- function(is_ci, is_pi, is_new) {
             # "coverage_effects",
             # "coverage_effects_min1",
             # "coverage_effects_all",
+            "ci_skewness",
+            "data_skewness",
             "width",
             "score",
             # "mse",
@@ -306,6 +336,8 @@ CI2measures <- function(x, pars) {
     delta <- x$delta
     # get the effect
     effect <- x$effect
+    # get the skewness from the data (gamma)
+    data_skewness <- ci_df$skewness_data
 
     out <- vector("list", length(unique_methods))
     # loop over each of the methods
@@ -328,6 +360,7 @@ CI2measures <- function(x, pars) {
             ci_exists = ci_exists[k],
             delta = delta,
             pars = pars,
+            data_skewness = data_skewness[k],
             p_max = if (curr_is_new) {
                 p_max[p_max_method == curr_method]
             } else {

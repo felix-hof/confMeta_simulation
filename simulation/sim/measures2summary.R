@@ -7,7 +7,7 @@ get_mean_stats <- function(df) {
     # Summarise all the measures except gamma_min & p_max
     df_sub <- subset(
         df,
-        !(measure %in% c("gamma_min", "p_max", "mse", "estimate"))
+        !(measure %in% c("gamma_min", "p_max", "mse", "estimate", "ci_skewness"))
     )
     # This works since mean of a vector of all NAs is just NA
     fun <- function(x) {
@@ -301,6 +301,64 @@ get_paccept_stats <- function(p_accept, col_order) {
             row.names = NULL
         )[col_order]
     }
+}
+
+get_skewness_stats <- function(df, pars, col_order) {
+    # Filter skewness
+    df_sub <- subset(df, measure %in% c("ci_skewness", "data_skewness"))
+    # Add sign and remove skewness == 0 because for cohen's kappa we need the
+    # by two table and sign must be positive or negative
+    rs <- within(
+        df_sub,
+        {
+            sign <- sign(value)
+            sign <- replace(sign, sign == 0, NA_real_)
+        }
+    )
+    # Get everything into wide format
+    rs <- tidyr::pivot_wider(
+        data = rs,
+        names_from = "measure",
+        values_from = c("value", "sign"),
+        values_fn = list
+    )
+    # calculate kappa and the correlation
+    out <- vapply(
+        seq_len(nrow(rs)),
+        function(i) {
+            with(
+                rs[i, ],
+                {
+                    kap_ci <- sign_ci_skewness[[1L]]
+                    kap_data <- sign_data_skewness[[1L]]
+                    cor_ci <- value_ci_skewness[[1L]]
+                    cor_data <- value_data_skewness[[1L]]
+                    kappa <- if (any(is.na(c(kap_ci, kap_data)))) {
+                        NA_real_ 
+                    } else {
+                        psych::cohen.kappa(cbind(kap_ci, kap_data))$kappa
+                    }
+                    correlation <- cor(cor_ci, cor_data)
+                    c(kappa, correlation)
+                }
+            )
+        },
+        numeric(2L)
+    )
+
+    cbind(
+        data.frame(
+            value = c(out[1, ], out[2, ]),
+            measure = rep(c("kappa", "correlation"), each = ncol(out))
+        ),
+        subset(
+            rs,
+            select = -c(
+                sign_ci_skewness, value_ci_skewness,
+                sign_data_skewness, value_data_skewness
+            )
+        )
+    )
 }
 
 

@@ -29,7 +29,6 @@ simRE <- function(
     large
 ) {
 
-    alpha <- 8
     ## specify mean effect, variance tau2 and shape parameter alpha
     ## compute parameters xi and omega of skew-normal distribution
     ## with shape parameter alpha (default = myalpha)
@@ -46,6 +45,8 @@ simRE <- function(
         return(res)
     }
 
+    # Set alpha = 8
+    alpha <- 8
 
     # get args
     n <- rep(sampleSize, k)
@@ -56,13 +57,16 @@ simRE <- function(
         eps2 <- 1 / k * sum(2 / n)
         tau2 <- eps2 * I2 / (1 - I2)
 
-        if (dist == "sn") {
+        if (dist == "snr") {
             ## xi: location parameter
             ## omega: scale parameter
             ## alpha: slant/shape parameter
             ## notation from Wikipedia
             p <- paramSN(effect = effect, tau2 = tau2, alpha = alpha)
             delta <- sn::rsn(n = k, xi = p["xi"], omega = p["omega"], alpha = alpha)
+        } else if (dist == "snl"){
+            p <- paramSN(effect = effect, tau2 = tau2, alpha = -alpha)
+            delta <- sn::rsn(n = k, xi = p["xi"], omega = p["omega"], alpha = -alpha)
         } else {
             delta <- rnorm(n = k, mean = effect, sd = sqrt(tau2))
         }
@@ -72,13 +76,16 @@ simRE <- function(
         phi <- 1 / (1 - I2)
         eps2 <- 1 / k * sum(2 / n)
         tau2 <- eps2 * (phi - 1)
-        if (dist == "sn") {
+        if (dist == "snr") {
             ## xi: location parameter
             ## omega: scale parameter
             ## alpha: slant/shape parameter
             ## notation from Wikipedia
-            p <- paramSN(effect = effect, tau2 = tau2)
+            p <- paramSN(effect = effect, tau2 = tau2, alpha = alpha)
             delta <- sn::rsn(n = k, xi = p["xi"], omega = p["omega"], alpha = alpha)
+        } else if (dist == "snl") {
+            p <- paramSN(effect = effect, tau2 = tau2, alpha = alpha)
+            delta <- sn::rsn(n = k, xi = p["xi"], omega = p["omega"], alpha = -alpha)
         } else {
             delta <- rnorm(n = k, mean = effect, sd = sqrt(tau2))
         }
@@ -132,8 +139,8 @@ pAccept <- function(theta, se, bias) {
 #' @param I2 Higgin's I^2 heterogeneity measure
 #' @param heterogeneity The heterogeneity model, the studies are simulated from.
 #' Either "additive" or "multiplicative".
-#' @param dist distribution to simulate the study effect. Either "sn" or
-#' "Gaussian".
+#' @param dist distribution to simulate the study effect. Either "snr", "snl",
+#' or "Gaussian".
 #' @param large A number in \code{c(0,1,2)} indicating the number of studies
 #' that have ten times the sample size as specified by \code{sampleSize}.
 #' Publication bias is only applied to the smaller studies with sample size
@@ -161,7 +168,7 @@ simREbias <- function(
     effect,
     I2,
     heterogeneity = c("additive", "multiplicative"),
-    dist = c("sn", "Gaussian"),
+    dist = c("snr", "snr", "Gaussian"),
     large,
     bias = c("none", "moderate", "strong"),
     verbose = TRUE,

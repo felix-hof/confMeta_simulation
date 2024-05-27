@@ -28,8 +28,8 @@
 
 ## Setup
 # rm(list = ls())
-remotes::install_github("felix-hof/confMeta")
-# remotes::install_github("SamCH93/confMeta")
+# remotes::install_github("felix-hof/confMeta")
+remotes::install_github("felix-hof/confMeta", ref = "dev")
 library(confMeta)
 library(doParallel) 
 library(doRNG)
@@ -203,7 +203,7 @@ grid <- expand.grid(
     # The heterogeneity model that the studies are simulated from
     heterogeneity = c("additive"),
     # distribution
-    dist = c("Gaussian", "sn"),
+    dist = c("Gaussian", "snr", "snl"),
     # bias
     bias = c("none", "moderate", "strong"),
     # number of large studies
@@ -215,7 +215,7 @@ grid <- expand.grid(
 # grid <- grid[floor(seq(1, 1080, length.out = 16)), ]
 # N <- 4
 # i <- 1
-# j <- 588
+# j <- 5
 
 ## run simulation, e.g., on the Rambo server of I-MATH
 start <- Sys.time()
