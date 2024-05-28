@@ -303,7 +303,7 @@ get_paccept_stats <- function(p_accept, col_order) {
     }
 }
 
-get_skewness_stats <- function(df, pars, col_order) {
+get_skewness_stats <- function(df, col_order) {
     # Filter skewness
     df_sub <- subset(df, measure %in% c("ci_skewness", "data_skewness"))
     # Add sign and remove skewness == 0 because for cohen's kappa we need the
@@ -322,23 +322,45 @@ get_skewness_stats <- function(df, pars, col_order) {
         values_from = c("value", "sign"),
         values_fn = list
     )
+    # View(rs)
+    # options(warn = 1L)
     # calculate kappa and the correlation
     out <- vapply(
         seq_len(nrow(rs)),
         function(i) {
             with(
                 rs[i, ],
+                # list2env(rs[i, ], globalenv())
                 {
+                    # print(i)
                     kap_ci <- sign_ci_skewness[[1L]]
                     kap_data <- sign_data_skewness[[1L]]
                     cor_ci <- value_ci_skewness[[1L]]
                     cor_data <- value_data_skewness[[1L]]
-                    kappa <- if (any(is.na(c(kap_ci, kap_data)))) {
+                    # View(cbind(kap_ci, kap_data))
+                    # View(cbind(cor_ci, cor_data))
+                    error_kappa <- any(is.na(c(kap_ci, kap_data)))
+                    error_cor <- any(
+                        vapply(
+                            X = list(cor_ci, cor_data),
+                            FUN = function(x) all(x == x[1L]),
+                            FUN.VALUE = logical(1L)
+                        )
+                    )
+                    kappa <- if (error_kappa) {
                         NA_real_ 
                     } else {
-                        psych::cohen.kappa(cbind(kap_ci, kap_data))$kappa
+                        suppressMessages(
+                            suppressWarnings(
+                                psych::cohen.kappa(cbind(kap_ci, kap_data))$kappa
+                            )
+                        )
                     }
-                    correlation <- cor(cor_ci, cor_data)
+                    correlation <- if (error_cor) {
+                        NA_real_
+                    } else {
+                        cor(cor_ci, cor_data)
+                    }
                     c(kappa, correlation)
                 }
             )
@@ -349,7 +371,11 @@ get_skewness_stats <- function(df, pars, col_order) {
     cbind(
         data.frame(
             value = c(out[1, ], out[2, ]),
-            measure = rep(c("kappa", "correlation"), each = ncol(out))
+            measure = rep(c("kappa", "correlation"), each = ncol(out)),
+            stat_fun = rep(c("cohen.kappa", "cor"), each = ncol(out)),
+            usage = "skewness_plot",
+            prop = NA_real_
+
         ),
         subset(
             rs,
@@ -358,7 +384,7 @@ get_skewness_stats <- function(df, pars, col_order) {
                 sign_data_skewness, value_data_skewness
             )
         )
-    )
+    )[col_order]
 }
 
 
@@ -377,6 +403,7 @@ get_summary_measures <- function(df, p_accept, pars) {
         p_accept = p_accept,
         col_order = col_order
     )
+    sk <- get_skewness_stats(df = df, col_order = col_order)
 
     # This works because in R, the return of rbind(df, NULL),
     # with df being a data.frame, is just df instead of an error
@@ -386,6 +413,7 @@ get_summary_measures <- function(df, p_accept, pars) {
         n_stats,
         bias_var_stats,
         p_accept_stats,
+        sk,
         make.row.names = FALSE
     )
     # add the parameters and return

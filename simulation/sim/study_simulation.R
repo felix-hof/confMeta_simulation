@@ -168,7 +168,7 @@ simREbias <- function(
     effect,
     I2,
     heterogeneity = c("additive", "multiplicative"),
-    dist = c("snr", "snr", "Gaussian"),
+    dist = c("snr", "snl", "Gaussian"),
     large,
     bias = c("none", "moderate", "strong"),
     verbose = TRUE,

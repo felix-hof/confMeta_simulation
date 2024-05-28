@@ -132,9 +132,10 @@ sim <- function(
         # error happened and we can skip the rest of the iterations.
         if (file.exists("error.txt")) {
             # if error happened, skip the rest of the loop iterations
+            cat("skipping", j, "of", nrow(grid), fill = TRUE)
             out <- "skipped"
         } else {
-            cat("start", j, "of", nrow(grid), fill = TRUE)
+            cat("starting", j, "of", nrow(grid), fill = TRUE)
             pars <- grid[j, ]
 
             # av is a list with elements that are either a data.frame or NA
@@ -177,8 +178,16 @@ sim <- function(
         out
     }
 
+    # In case of error, save output
+    out_dims <- vapply(o, function(x) length(dim(x)), integer(1L))
+    if (any(out_dims == 0L)) 
+
     # # rbind ci_meas lists together
-    o <- do.call("rbind", o)
+    o <- tryCatch({
+        do.call("rbind", o)
+    }, error = function(cond) {
+        save(o, file = "RData/partial_sim.RData")
+    })
 
     # set some attributes and return
     attr(o, "seed") <- seed
@@ -213,7 +222,7 @@ grid <- expand.grid(
 
 # For testing
 # grid <- grid[floor(seq(1, 1080, length.out = 16)), ]
-# N <- 4
+# N <- 20
 # i <- 1
 # j <- 5
 
