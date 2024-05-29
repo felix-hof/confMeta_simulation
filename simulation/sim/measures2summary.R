@@ -339,11 +339,14 @@ get_skewness_stats <- function(df, col_order) {
                     cor_data <- value_data_skewness[[1L]]
                     # View(cbind(kap_ci, kap_data))
                     # View(cbind(cor_ci, cor_data))
+                    # Check for error conditions
+                    ## kappa() -> if there are NAs
                     error_kappa <- any(is.na(c(kap_ci, kap_data)))
+                    ## cor() -> if one of the vectors is constant
                     error_cor <- any(
                         vapply(
                             X = list(cor_ci, cor_data),
-                            FUN = function(x) all(x == x[1L]),
+                            FUN = all_equal,
                             FUN.VALUE = logical(1L)
                         )
                     )
