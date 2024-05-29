@@ -48,6 +48,15 @@ error_function <- function(cond, pars, error_obj = NULL, fun_name, i) {
     return(NA)
 }
 
+# Check whether all elements of a vector are constant
+all_equal <- function(vec) {
+    if (anyNA(vec)) {
+        TRUE
+    } else {
+        all(vec == vec[1L])
+    }
+}
+
 # ## These functions just call p_hmean under the hood but fix the argument
 # ## `distr` to be either `"f"` or `"chisq"`. This is useful because we do not
 # ## actually need to worry about including `distr = "f"` in the `args` argument
