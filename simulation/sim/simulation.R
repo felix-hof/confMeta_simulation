@@ -180,7 +180,10 @@ sim <- function(
 
     # In case of error, save output
     out_dims <- vapply(o, function(x) length(dim(x)), integer(1L))
-    if (any(out_dims == 0L)) 
+    #if (any(out_dims == 0L))
+
+    # print size
+    print(object.size(o), units = "MB", quote = FALSE)
 
     # # rbind ci_meas lists together
     o <- tryCatch({
@@ -228,7 +231,7 @@ grid <- expand.grid(
 
 ## run simulation, e.g., on the Rambo server of I-MATH
 start <- Sys.time()
-out <- sim(grid = grid, N = 2.5e3, cores = 200)
+out <- sim(grid = grid, N = 2.5e3, cores = 77)
 # out <- sim(grid = grid, N = 4, cores = 15)
 end <- Sys.time()
 print(end - start)
