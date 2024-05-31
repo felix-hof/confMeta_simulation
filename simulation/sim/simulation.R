@@ -178,17 +178,17 @@ sim <- function(
         out
     }
 
-    # In case of error, save output
-    out_dims <- vapply(o, function(x) length(dim(x)), integer(1L))
-    #if (any(out_dims == 0L))
-
     # print size
+    dir.create("RData", showWarnings = FALSE)
     print(object.size(o), units = "MB", quote = FALSE)
 
-    # # rbind ci_meas lists together
+    saveRDS(o, file = "RData/o.rds")
+
+    # rbind ci_meas lists together
     o <- tryCatch({
         do.call("rbind", o)
     }, error = function(cond) {
+	dir.create("RData", showWarnings = FALSE)
         save(o, file = "RData/partial_sim.RData")
     })
 
@@ -224,14 +224,17 @@ grid <- expand.grid(
 )
 
 # For testing
-# grid <- grid[floor(seq(1, 1080, length.out = 16)), ]
+#grid <- grid[floor(seq(1, 1080, length.out = 160)), ]
+N <- 2.5e3
+#N <- 5
+cores <- 77
 # N <- 20
 # i <- 1
 # j <- 5
 
 ## run simulation, e.g., on the Rambo server of I-MATH
 start <- Sys.time()
-out <- sim(grid = grid, N = 2.5e3, cores = 77)
+out <- sim(grid = grid, N = N, cores = cores)
 # out <- sim(grid = grid, N = 4, cores = 15)
 end <- Sys.time()
 print(end - start)
