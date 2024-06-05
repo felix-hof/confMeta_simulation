@@ -43,6 +43,9 @@ source("studies2cis.R")
 source("cis2measures.R")
 source("measures2summary.R")
 
+## Create the directory where we want to save the results
+dir.create("RData", showWarnings = FALSE)
+
 ################################################################################
 #                          Wrap everything in one function                     #
 ################################################################################
@@ -179,16 +182,17 @@ sim <- function(
     }
 
     # print size
-    dir.create("RData", showWarnings = FALSE)
     print(object.size(o), units = "MB", quote = FALSE)
 
-    saveRDS(o, file = "RData/o.rds")
+    # Since we experienced some issues with the `save` function, we try to save
+    # the output here as well -> but not on math servers as they only have 5GB
+    # of disk space
+    # saveRDS(o, file = "RData/o.rds")
 
     # rbind ci_meas lists together
     o <- tryCatch({
         do.call("rbind", o)
     }, error = function(cond) {
-	dir.create("RData", showWarnings = FALSE)
         save(o, file = "RData/partial_sim.RData")
     })
 
@@ -223,24 +227,44 @@ grid <- expand.grid(
     stringsAsFactors = FALSE
 )
 
-# For testing
-#grid <- grid[floor(seq(1, 1080, length.out = 160)), ]
-N <- 2.5e3
-#N <- 5
-cores <- 77
-# N <- 20
+# Set some parameters based on available computing machines
+machine <- Sys.info()["nodename"]
+if (machine == "T14s") {
+    # On my machine, run this with N = 5, on 14 cores, and on a smaller grid.
+    # This is only used for development, debugging, and testing.
+    N <- 5
+    cores <- 15
+    grid <- grid[floor(seq(1, 1080, length.out = 160)), ]
+} else if (machine == "david") {
+    # The math institute has a server called "david" with 80 CPU cores
+    N <- 2.5e3
+    cores <- 77
+} else if (machine == "rambo") {
+    # The math institute has a server called "rambo" with 128 CPU cores
+    N <- 2.5e3
+    cores <- 124
+}
+
 # i <- 1
 # j <- 5
 
 ## run simulation, e.g., on the Rambo server of I-MATH
 start <- Sys.time()
 out <- sim(grid = grid, N = N, cores = cores)
-# out <- sim(grid = grid, N = 4, cores = 15)
 end <- Sys.time()
-print(end - start)
+run_time <- end - start
+cat(
+    paste0(
+        "Running simulation required ",
+        round(run_time, 2),
+        " ",
+        attributes(run_time)$units
+    ),
+    fill = TRUE
+)
+attr(out, which = "runtime") <- run_time
 
 ## save results
-dir.create("RData", showWarnings = FALSE)
 sessionInfo <- sessionInfo()
 print(sessionInfo)
 save(out, sessionInfo, file = "RData/simulate_all.RData")
