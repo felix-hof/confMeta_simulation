@@ -238,7 +238,7 @@ if (machine == "T14s") {
 } else if (machine == "david") {
     # The math institute has a server called "david" with 80 CPU cores
     N <- 2.5e3
-    cores <- 77
+    cores <- 60
 } else if (machine == "rambo") {
     # The math institute has a server called "rambo" with 128 CPU cores
     N <- 2.5e3
@@ -249,6 +249,9 @@ if (machine == "T14s") {
 # j <- 5
 
 ## run simulation, e.g., on the Rambo server of I-MATH
+cat(paste0("Running every simulation ", N, " times."), fill = TRUE)
+cat(paste0("In total there are ", nrow(grid), " simulation scenarios."), fill = TRUE)
+cat(paste0("Simulation will be run on ", cores, " CPU cores."), fill = TRUE)
 start <- Sys.time()
 out <- sim(grid = grid, N = N, cores = cores)
 end <- Sys.time()
