@@ -67,7 +67,7 @@ if(length(install_libs) == 0){
 	cat("All necessary libraries already installed.\n")
 } else {
 	cat("Installing packages:\n", paste(install_libs, collapse = "\n", "\n"))
-	lapply(libs, function(x){
+	lapply(install_libs, function(x){
 	  out <- tryCatch({install.packages(x); 0L},
 	    warning = function(w) 1L,
 	    error = function(e) 2L)
@@ -75,3 +75,4 @@ if(length(install_libs) == 0){
 	  invisible(NULL)
 	})
 }
+
