@@ -260,8 +260,8 @@ get_measures <- function(is_ci, is_pi, is_new) {
             # "coverage_effects",
             # "coverage_effects_min1",
             # "coverage_effects_all",
-            "ci_skewness",
-            "data_skewness",
+            # "ci_skewness",
+            # "data_skewness",
             "width",
             "score",
             # "mse",
@@ -279,7 +279,9 @@ get_measures <- function(is_ci, is_pi, is_new) {
         calc_meas[[counter]] <- c(
             "n",
             # "gamma",
-            "p_max"
+            "p_max",
+            "ci_skewness",
+            "data_skewness"
         )
         counter <- counter + 1L
     }
