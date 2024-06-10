@@ -243,6 +243,9 @@ if (machine == "T14s") {
     # The math institute has a server called "rambo" with 128 CPU cores
     N <- 2.5e3
     cores <- 124
+} else if (machine == "box") {
+    N <- 2.5e3
+    cores <- 230
 }
 
 # i <- 1
