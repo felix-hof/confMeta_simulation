@@ -149,13 +149,23 @@ sim <- function(
             pb <- pars$bias != "none"
             p_accept <- if (pb) vector("numeric", length = N) else NULL
             for (i in seq_len(N)) {
-                # system(paste0("printf 'j=", j, ", i=", i, "\n'"))
+                # st <- Sys.time()
                 # Repeat this N times. Simulate studies, calculate CIs,
                 # calculate measures
                 res <- sim_effects(pars = pars, i = i)
                 if (pb) p_accept[i] <- attributes(res)$p_accept
                 CIs <- calc_ci(x = res, pars = pars, i = i)
                 av[[i]] <- calc_measures(x = CIs, pars = pars, i = i)
+                # if (anyNA(av[[i]]$value)) stop("Found the NA")
+                # en <- Sys.time()
+                # rt <- en - st
+                # cat(
+                #     paste0(
+                #         "Iteration ", i, " took ", round(rt, 2), " ",
+                #         attributes(rt)$units, " to run."
+                #     ),
+                #     fill = TRUE
+                # )
             }
 
             # summarize the N tibbles.
@@ -165,6 +175,8 @@ sim <- function(
             } else {
                 # rbind data frames in list `av`
                 df <- do.call("rbind", av)
+                anyNA(df$value)
+                df |> filter(is.na(value)) |> View()
                 attr(df, "N") <- N
                 attr(df, "effect") <- pars$effect
                 # calculate the summary measures
@@ -175,6 +187,7 @@ sim <- function(
                     i = j
                 )
                 out
+                View(out)
             }
         }
         # return output
@@ -209,13 +222,13 @@ sim <- function(
 ## set parameter grid to be evaluated
 grid <- expand.grid(
     # sample size of trial
-    sampleSize = 50,
+    sampleSize = 50L,
     # average effect, impacts selection bias
     effect = c(0.1, 0.2, 0.5),
     # Higgin's I^2 heterogeneity measure
     I2 = c(0, 0.3, 0.6, 0.9),
     # number of studies
-    k = c(3, 5, 10, 20, 50),
+    k = c(3L, 5L, 10L, 20L, 50L),
     # The heterogeneity model that the studies are simulated from
     heterogeneity = c("additive"),
     # distribution
@@ -223,8 +236,22 @@ grid <- expand.grid(
     # bias
     bias = c("none", "moderate", "strong"),
     # number of large studies
-    large = c(0, 1, 2),
+    large = c(0L, 1L, 2L),
     stringsAsFactors = FALSE
+)
+
+j <- which(
+    with(
+        grid,
+        {
+            effect == 0.1 &
+            I2 == 0.9 &
+            k == 50L &
+            dist == "snl" &
+            bias == "none" &
+            large == 0L
+        }
+    )
 )
 
 # Set some parameters based on available computing machines
@@ -246,13 +273,21 @@ if (machine == "T14s") {
 } else if (machine == "box") {
     N <- 2.5e3
     cores <- 230
+} else {
+    stop(
+        paste0(
+            "Unknown host. Please add this machine to the if-statement",
+            " and specify the amount of times each simulation should be run",
+            " as well as the number of CPU cores."
+        )
+    )
 }
 
 # i <- 1
 # j <- 5
 
 ## run simulation, e.g., on the Rambo server of I-MATH
-cat(paste0("Running every simulation ", N, " times."), fill = TRUE)
+cat(paste0("Running every scenario ", N, " times."), fill = TRUE)
 cat(paste0("In total there are ", nrow(grid), " simulation scenarios."), fill = TRUE)
 cat(paste0("Simulation will be run on ", cores, " CPU cores."), fill = TRUE)
 start <- Sys.time()

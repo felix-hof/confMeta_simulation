@@ -63,9 +63,10 @@ convert_names <- function(id_strings) {
         meth <- c(
             "hMeanF" = "Harmonic Mean (f)",
             "hMeanChisq" = "Harmonic Mean (chisq)",
-            "ktrials" = "k-Trials",
+            "wilkinson" = "Wilkinson",
             "pearson" = "Pearson",
             "fisher" = "Fisher",
+            "tippett" = "Tippett",
             "edgington" = "Edgington",
             "hc" =  "Henmi & Copas",
             "hk" = "Hartung & Knapp",
@@ -100,7 +101,7 @@ convert_names <- function(id_strings) {
         # if (l == 3L) out <- paste0(out, " (", str[2L], ")")
         # out
     }
-    
+
     # p_accept_plots have method == "none"
     out <- rep("none", length(id_strings))
     is_none <- id_strings == "none"
@@ -131,7 +132,17 @@ out <- out |>
         I2 = factor(I2),
         k = factor(k)
     )
-View(out)
+# anyNA(out$value)
+# out |> filter(is.na(value), is_new) |> View()
+# out |>
+#     filter(
+#         # dist == "Gaussian",
+#         measure == "coverage_true",
+#         I2 == 0.9,
+#         effect == 0.1,
+#         bias == "none"
+#     ) |>
+#     View()
 
 # Prepare data (meanplots) ----
 out_meanplots <- out |>
@@ -161,13 +172,13 @@ out_gammamax <- out |>
     arrange(k, dist, bias, large, heterogeneity, I2, method, measure)
 
 # Prepare data (frequency) ----
-out_n <- out |>
-    filter(usage == "n_plot") |>
-    mutate(
-        measure = gsub("gt", "> ", stat_fun),
-        measure = ordered(measure, levels = rev(c("> 9", as.character(9:0)))),
-        value = value / attributes(out)$N
-    )
+# out_n <- out |>
+#     filter(usage == "n_plot") |>
+#     mutate(
+#         measure = gsub("gt", "> ", stat_fun),
+#         measure = ordered(measure, levels = rev(c("> 9", as.character(9:0)))),
+#         value = value / attributes(out)$N
+#     )
 
 # Prepare data (summary) ----
 out_sum <- out_meanplots |>
@@ -237,28 +248,27 @@ plotPanels <- function(
                         mutate(method = factor(method, levels = order))
                 } else {
                     order <- c(
-                        ## "Edgington (none) CI",
-                        ## "Edgington (REML) CI",
-                        ## "Edgington (DL) CI",
-                        ## "Edgington (PM) CI",
-                        ## "Fisher (none) CI",
-                        ## "Fisher (REML) CI",
-                        ## "Fisher (DL) CI",
-                        ## "Fisher (PM) CI",
-                        ## "Random effects (none) CI",
-                        ## "Random effects (REML) CI",
-                        ## "Random effects (DL) CI",
-                        ## "Random effects (PM) CI",
-                        ## "Hartung & Knapp (REML) CI",
-                        ## "Henmi & Copas (DL) CI"
-                        ## "Edgington (none) CI",
+                        "Edgington (none) CI",
                         "Edgington (REML) CI",
-                        "Random effects (REML) CI",
-                        ## "Fisher (none) CI",
+                        "Edgington (DL) CI",
+                        "Fisher (none) CI",
                         "Fisher (REML) CI",
-                        "Hartung & Knapp (REML) CI",
-                        ## "Pearson (none) CI",
+                        "Fisher (DL) CI",
+                        "Pearson (none) CI",
                         "Pearson (REML) CI",
+                        "Pearson (DL) CI",
+                        "Tippett (none) CI",
+                        "Tippett (REML) CI",
+                        "Tippett (DL) CI",
+                        "Wilkinson (none) CI",
+                        "Wilkinson (REML) CI",
+                        "Wilkinson (DL) CI",
+                        "Hartung & Knapp (none) CI",
+                        "Hartung & Knapp (REML) CI",
+                        "Hartung & Knapp (DL) CI",
+                        "Random effects (none) CI",
+                        "Random effects (REML) CI",
+                        "Random effects (DL) CI",
                         "Henmi & Copas (DL) CI"
                     )
                     .[] |>
@@ -352,9 +362,13 @@ for (x in list_seq) { # loop over summary (eg. dist)
             }
         )
         img_data <- out_meanplots |> filter(!!!filters)
+        # View(img_data)
         for (me in measure_opts) { # loop over different measures
             img_data_me_ss <- img_data |> filter(measure == me)
             img_data_me_val <- img_data_me_ss |> filter(!is.na(value))
+            if (!identical(img_data_me_ss, img_data_me_val)) {
+                stop("Unexpected NAs.")
+            }
             ll <- list(
                 "value" = list(
                     data = img_data_me_val,
@@ -388,6 +402,11 @@ for (x in list_seq) { # loop over summary (eg. dist)
                                 make_title()
                             p <- l$data |>
                                 filter(!!sym(current) == z) |>
+                            # data <- l$data |>
+                            #     filter(!!sym(current) == z)
+                            # View(data)
+                            # data |> filter(grepl("Henmi", method)) |> View()
+                            # data
                                 plotPanels(
                                     measure = me,
                                     by = "method",
