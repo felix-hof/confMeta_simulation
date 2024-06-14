@@ -1,6 +1,27 @@
 ################################################################################
 #                    Simulating effects and standard errors                    #
 ################################################################################
+
+
+
+## specify mean effect, variance tau2 and shape parameter alpha
+## compute parameters xi and omega of skew-normal distribution
+## with shape parameter alpha
+paramSN <- function(
+    effect,
+    tau2,
+    alpha
+) {
+    delta <- alpha / sqrt(1 + alpha^2)
+    omega <- sqrt(tau2) / sqrt(1 - 2 * delta^2 / pi)
+    xi <- effect - omega * delta * sqrt(2 / pi)
+    res <- c(xi, omega)
+    names(res) <- c("xi", "omega")
+    return(res)
+}
+
+
+
 # 20240409: LeoUpdate: skewNormal replaces t distribution
 #' Simulate effect estimates and their standard errors using a random effects
 #' model
@@ -29,23 +50,7 @@ simRE <- function(
     large
 ) {
 
-    ## specify mean effect, variance tau2 and shape parameter alpha
-    ## compute parameters xi and omega of skew-normal distribution
-    ## with shape parameter alpha (default = myalpha)
-    paramSN <- function(
-        effect,
-        tau2,
-        alpha
-    ) {
-        delta <- alpha / sqrt(1 + alpha^2)
-        omega <- sqrt(tau2) / sqrt(1 - 2 * delta^2 / pi)
-        xi <- effect - omega * delta * sqrt(2 / pi)
-        res <- c(xi, omega)
-        names(res) <- c("xi", "omega")
-        return(res)
-    }
-
-    # Set alpha = 8
+    # Set alpha = 8 for skew-normal distributions
     alpha <- 8
 
     # get args
