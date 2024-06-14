@@ -175,8 +175,8 @@ sim <- function(
             } else {
                 # rbind data frames in list `av`
                 df <- do.call("rbind", av)
-                anyNA(df$value)
-                df |> filter(is.na(value)) |> View()
+                # anyNA(df$value)
+                # df |> filter(is.na(value)) |> View()
                 attr(df, "N") <- N
                 attr(df, "effect") <- pars$effect
                 # calculate the summary measures
@@ -187,7 +187,6 @@ sim <- function(
                     i = j
                 )
                 out
-                View(out)
             }
         }
         # return output
@@ -195,7 +194,14 @@ sim <- function(
     }
 
     # print size
-    print(object.size(o), units = "MB", quote = FALSE)
+    cat(
+        paste0(
+            "Results size is ",
+            format(object.size(o), units = "MB", quote = FALSE),
+            "."
+        ),
+        fill = TRUE
+    )
 
     # Since we experienced some issues with the `save` function, we try to save
     # the output here as well -> but not on math servers as they only have 5GB
@@ -261,7 +267,7 @@ if (machine == "T14s") {
     # This is only used for development, debugging, and testing.
     N <- 5
     cores <- 15
-    grid <- grid[floor(seq(1, 1080, length.out = 160)), ]
+    # grid <- grid[floor(seq(1, 1080, length.out = 160)), ]
 } else if (machine == "david") {
     # The math institute has a server called "david" with 80 CPU cores
     N <- 2.5e3
@@ -277,7 +283,7 @@ if (machine == "T14s") {
     stop(
         paste0(
             "Unknown host. Please add this machine to the if-statement",
-            " and specify the amount of times each simulation should be run",
+            " and specify the amount of times each scenario should be run",
             " as well as the number of CPU cores."
         )
     )
@@ -299,11 +305,14 @@ cat(
         "Running simulation required ",
         round(run_time, 2),
         " ",
-        attributes(run_time)$units
+        attributes(run_time)$units,
+        "."
     ),
     fill = TRUE
 )
 attr(out, which = "runtime") <- run_time
+
+View(out)
 
 ## save results
 sessionInfo <- sessionInfo()
