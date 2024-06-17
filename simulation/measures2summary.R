@@ -178,8 +178,10 @@ get_n_stats <- function(df, col_order) {
 # This function calculates the MSE, variance and bias
 # the estimates
 get_bias_var_stats <- function(df, col_order) {
-    # get the effect
+    # get the mean
     effect <- attributes(df)$effect
+    # get the median
+    median <- attributes(df)$median
     # store the method specific info
     df_sub_rest <- unique(subset(df, select = -c(measure, value)))
     # get the point estimates for all methods and convert to factor
@@ -204,9 +206,10 @@ get_bias_var_stats <- function(df, col_order) {
             value <- value[, "value"]
         }
     )
-    bias <- within(mean_est, value <- value - effect)
+    bias_mean <- within(mean_est, value <- value - effect)
+    bias_median <- within(mean_est, value <- value - median)
     # Calculate variance, i.e. var(estimates)
-    var_est <- stats::aggregate(
+    var_mean <- stats::aggregate(
         value ~ method,
         FUN = function(x) {
             c(
@@ -225,28 +228,45 @@ get_bias_var_stats <- function(df, col_order) {
         data = df_sub_est,
         na.action = identity
     )
-    var_est <- within(
-        var_est,
+    var_mean <- within(
+        var_mean,
         {
             prop <- value[, "prop"]
             value <- value[, "value"]
         }
     )
+    var_median <- var_mean
     # Calculate MSE, i.e. (1/n) * sum((estimate - true_effect)^2)
-    mse_est <- stats::aggregate(
+    calc_mse <- function(x, effect) {
+        c(
+            "value" = mean((x - effect)^2, na.rm = TRUE),
+            "prop" = sum(!is.na(x)) / length(x)
+        )
+    }
+    mse_mean <- stats::aggregate(
         value ~ method,
-        FUN = function(x, effect) {
-            c(
-                "value" = mean((x - effect)^2, na.rm = TRUE),
-                "prop" = sum(!is.na(x)) / length(x)
-            )
-        },
+        FUN = calc_mse,
         data = df_sub_est,
         effect = effect,
         na.action = identity
     )
-    mse_est <- within(
-        mse_est,
+    mse_mean <- within(
+        mse_mean,
+        {
+            prop <- value[, "prop"]
+            value <- value[, "value"]
+        }
+    )
+    # Calculate the MSE for the median
+    mse_median <- stats::aggregate(
+        value ~ method,
+        FUN = calc_mse,
+        data = df_sub_est,
+        effect = median,
+        na.action = identity
+    )
+    mse_median <- within(
+        mse_median,
         {
             prop <- value[, "prop"]
             value <- value[, "value"]
@@ -255,12 +275,19 @@ get_bias_var_stats <- function(df, col_order) {
     # Check
     # test <- Reduce(
     #     f = function(x, y) merge(x, y, all = TRUE, by = "method"),
-    #     x = list(bias, var_est, mse_est)
+    #     x = list(bias_median[1:2], var_median[1:2], mse_median[1:2])
     # )
     # names(test)[2:4] <- c("bias", "var", "mse")
     # out <- cbind(sum = with(test, var + bias^2), mse =  test$mse)
     # out[, 1L] - out[, 2L]
-    ll <- list("bias" = bias, "var" = var_est, "mse" = mse_est)
+    ll <- list(
+        "bias_mean" = bias_mean,
+        "var_mean" = var_mean,
+        "mse_mean" = mse_mean,
+        "bias_median" = bias_median,
+        "var_median" = var_median,
+        "mse_median" = mse_median
+    )
     do.call(
         "rbind",
         lapply(
