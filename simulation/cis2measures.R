@@ -14,7 +14,7 @@ calc_ci_skewness <- function(cis, estimates, ci_exists) {
     }
 }
 
-# Dummy function fro adding the skewness calculated from the data
+# Dummy function for adding the skewness calculated from the data
 # this was calculated before already
 add_data_skewness <- function(data_skewness) {
     data_skewness
@@ -168,10 +168,17 @@ get_measures <- function(is_ci, is_pi, is_new) {
 
     # list all functions for measures
     all_meas <- list(
-        coverage_true = quote({
+        coverage_mean = quote({
             calc_coverage_true(
                 cis = cis,
-                effect = effect,
+                effect = mean,
+                ci_exists = ci_exists
+            )
+        }),
+        coverage_median = quote({
+            calc_coverage_true(
+                cis = cis,
+                effect = median,
                 ci_exists = ci_exists
             )
         }),
@@ -256,7 +263,8 @@ get_measures <- function(is_ci, is_pi, is_new) {
     counter <- 1L
     if (is_ci) {
         calc_meas[[counter]] <- c(
-            "coverage_true",
+            "coverage_mean",
+            "coverage_median",
             # "coverage_effects",
             # "coverage_effects_min1",
             # "coverage_effects_all",
@@ -336,8 +344,10 @@ CI2measures <- function(x, pars) {
     estimates_method <- x$estimates$method
     # get the deltas
     delta <- x$delta
-    # get the effect
+    # get the effect (mean)
     effect <- x$effect
+    # get the median
+    median <- x$median
     # get the skewness from the data (gamma)
     data_skewness <- ci_df$skewness_data
 
@@ -358,7 +368,8 @@ CI2measures <- function(x, pars) {
         # create the argument list
         arg_list <- list(
             cis = cis[ci_method == curr_method, , drop = FALSE],
-            effect = effect,
+            mean = effect,
+            median = median,
             ci_exists = ci_exists[k],
             delta = delta,
             pars = pars,
