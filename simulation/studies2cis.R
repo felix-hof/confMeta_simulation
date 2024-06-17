@@ -627,7 +627,8 @@ sim2CIs <- function(x) {
         model = att$heterogeneity, # this is the simulation model
         theta = thetahat,
         delta = delta,
-        effect = att$effect
+        effect = att$effect,
+        median = att$median
     )
 }
 
