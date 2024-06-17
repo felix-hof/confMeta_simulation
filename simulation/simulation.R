@@ -27,7 +27,7 @@
 ## Felix Hofmann, felix.hofmann2@uzh.ch, Oct. 26, 2021
 
 ## Setup
-# rm(list = ls())
+rm(list = ls())
 # remotes::install_github("felix-hof/confMeta")
 remotes::install_github("felix-hof/confMeta", ref = "dev")
 library(confMeta)
@@ -179,6 +179,7 @@ sim <- function(
                 # df |> filter(is.na(value)) |> View()
                 attr(df, "N") <- N
                 attr(df, "effect") <- pars$effect
+                attr(df, "median") <- attributes(res)$median
                 # calculate the summary measures
                 out <- calc_summary_measures(
                     df = df,
@@ -246,19 +247,19 @@ grid <- expand.grid(
     stringsAsFactors = FALSE
 )
 
-j <- which(
-    with(
-        grid,
-        {
-            effect == 0.1 &
-            I2 == 0.9 &
-            k == 50L &
-            dist == "snl" &
-            bias == "none" &
-            large == 0L
-        }
-    )
-)
+# j <- which(
+#     with(
+#         grid,
+#         {
+#             effect == 0.1 &
+#             I2 == 0.9 &
+#             k == 50L &
+#             dist == "snl" &
+#             bias == "moderate" &
+#             large == 0L
+#         }
+#     )
+# )
 
 # Set some parameters based on available computing machines
 machine <- Sys.info()["nodename"]
@@ -311,8 +312,6 @@ cat(
     fill = TRUE
 )
 attr(out, which = "runtime") <- run_time
-
-View(out)
 
 ## save results
 sessionInfo <- sessionInfo()
