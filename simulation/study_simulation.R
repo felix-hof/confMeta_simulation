@@ -10,13 +10,24 @@
 paramSN <- function(
     effect,
     tau2,
-    alpha
+    alpha,
+    median
 ) {
     delta <- alpha / sqrt(1 + alpha^2)
     omega <- sqrt(tau2) / sqrt(1 - 2 * delta^2 / pi)
     xi <- effect - omega * delta * sqrt(2 / pi)
-    res <- c(xi, omega)
-    names(res) <- c("xi", "omega")
+    if (median){
+        med <- if (omega == 0) {
+            effect
+        } else {
+            sn::qsn(0.5, alpha = alpha, omega = omega, xi = xi)
+        }
+        res <- c(xi, omega, med)
+        names(res) <- c("xi", "omega", "median")
+    } else {
+        res <- c(xi, omega)
+        names(res) <- c("xi", "omega")
+    }
     return(res)
 }
 
@@ -47,7 +58,8 @@ simRE <- function(
     I2,
     heterogeneity,
     dist,
-    large
+    large,
+    median
 ) {
 
     # Set alpha = 8 for skew-normal distributions
@@ -67,12 +79,23 @@ simRE <- function(
             ## omega: scale parameter
             ## alpha: slant/shape parameter
             ## notation from Wikipedia
-            p <- paramSN(effect = effect, tau2 = tau2, alpha = alpha)
+            p <- paramSN(
+                effect = effect,
+                tau2 = tau2,
+                alpha = alpha,
+                median = median
+            )
             delta <- sn::rsn(n = k, xi = p["xi"], omega = p["omega"], alpha = alpha)
         } else if (dist == "snl"){
-            p <- paramSN(effect = effect, tau2 = tau2, alpha = -alpha)
+            p <- paramSN(
+                effect = effect,
+                tau2 = tau2,
+                alpha = -alpha,
+                median = median
+            )
             delta <- sn::rsn(n = k, xi = p["xi"], omega = p["omega"], alpha = -alpha)
         } else {
+            if (median) p <- c("median" = effect)
             delta <- rnorm(n = k, mean = effect, sd = sqrt(tau2))
         }
         theta <- rnorm(n = k, mean = delta, sd = sqrt(2 / n))
@@ -86,12 +109,23 @@ simRE <- function(
             ## omega: scale parameter
             ## alpha: slant/shape parameter
             ## notation from Wikipedia
-            p <- paramSN(effect = effect, tau2 = tau2, alpha = alpha)
+            p <- paramSN(
+                effect = effect,
+                tau2 = tau2,
+                alpha = alpha,
+                median = median
+            )
             delta <- sn::rsn(n = k, xi = p["xi"], omega = p["omega"], alpha = alpha)
         } else if (dist == "snl") {
-            p <- paramSN(effect = effect, tau2 = tau2, alpha = alpha)
+            p <- paramSN(
+                effect = effect,
+                tau2 = tau2,
+                alpha = -alpha,
+                median = median
+            )
             delta <- sn::rsn(n = k, xi = p["xi"], omega = p["omega"], alpha = -alpha)
         } else {
+            if (median) p <- c("median" = effect)
             delta <- rnorm(n = k, mean = effect, sd = sqrt(tau2))
         }
         theta <- rnorm(n = k, mean = delta, sd = sqrt(2 / n))
@@ -99,6 +133,7 @@ simRE <- function(
     se <- sqrt(rchisq(n = k, df = 2 * n - 2) / (n * (n - 1)))
     o <- cbind("theta" = theta, "se" = se, "delta" = delta)
     rownames(o) <- NULL
+    if (median) attr(o, which = "median") <- unname(p["median"])
     return(o)
 }
 
@@ -218,10 +253,11 @@ simREbias <- function(
     if (bias == "none") {
         o <- simRE(
             k = k, sampleSize = sampleSize, effect = effect, I2 = I2,
-            heterogeneity = heterogeneity, dist = dist, large = large
+            heterogeneity = heterogeneity, dist = dist, large = large,
+            median = TRUE
         )
         ## add attributes and return
-        attr(o, "heterogeneity") <- heterogeneity
+        attr(o, which = "heterogeneity") <- heterogeneity
         attr(o, which = "effect") <- effect
         attr(o, which = "p_accept") <- 1
         return(o)
@@ -230,15 +266,18 @@ simREbias <- function(
     ## first ignore the 'large'
     o <- simRE(
         k = k * 3, sampleSize = sampleSize, effect = effect, I2 = I2,
-        heterogeneity = heterogeneity, dist = dist, large = 0
+        heterogeneity = heterogeneity, dist = dist, large = 0, median = TRUE
     )
+    # keep the median and add it later as attributes don't survive rbind
+    med <- attributes(o)$median
     pa <- pAccept(theta = o[, "theta"], se = o[, "se"], bias = bias)
     keep <- rbinom(n = k * 3, size = 1, prob = pa)
     while (k > sum(keep)) {
         if (verbose) cat(".")
         o2 <- simRE(
             k = k * 3, sampleSize = sampleSize, effect = effect,
-            I2 = I2, heterogeneity = heterogeneity, dist = dist,  large = 0
+            I2 = I2, heterogeneity = heterogeneity, dist = dist,  large = 0,
+            median = FALSE
         )
         pa2 <- pAccept(theta = o2[, "theta"], se = o2[, "se"], bias = bias)
         keep2 <- rbinom(n = k * 3, size = 1, p = pa2)
@@ -252,7 +291,8 @@ simREbias <- function(
     if (large != 0) {
         oLarge <- simRE(
             k = large, sampleSize = sampleSize, effect = effect,
-            I2 = I2, heterogeneity = heterogeneity, dist = dist, large = large
+            I2 = I2, heterogeneity = heterogeneity, dist = dist, large = large,
+            median = FALSE
         )
         sl <- seq_len(large)
         o <- rbind(oLarge, o[-sl, ])
@@ -260,6 +300,7 @@ simREbias <- function(
     }
 
     ## add attributes and return
+    attr(o, which = "median") <- med
     attr(o, which = "heterogeneity") <- heterogeneity
     attr(o, which = "effect") <- effect
     attr(o, which = "p_accept") <- mean(pa)
