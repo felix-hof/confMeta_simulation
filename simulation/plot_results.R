@@ -1094,19 +1094,8 @@ for (x in list_seq) { # loop over summary (eg. dist)
 
 # Summary of meanplots ---------------------------------------------------------
 
-# Make directories
-out_path <- file.path(out_dir, "summary")
-dir.create(out_path, showWarnings = FALSE, recursive = TRUE)
-
-# Set types of plots
-opts <- list(
-    dist = unique(out_sum$dist),
-    effect = unique(out_sum$effect),
-    large = unique(out_sum$large),
-    bias = unique(out_sum$bias)
-)
-
-msrs <- unique(out_sum$measure)
+# Debug
+# out_sum_og <- out_sum
 
 # Set the order of plots
 method_order <- c(
@@ -1115,29 +1104,61 @@ method_order <- c(
     "Edgington (DL) CI",
     # "Fisher (none) CI",
     # "Fisher (REML) CI",
-    "Fisher (DL) CI",
+    # "Fisher (DL) CI",
     # "Pearson (none) CI",
     # "Pearson (REML) CI",
-    "Pearson (DL) CI",
+    # "Pearson (DL) CI",
     # "Tippett (none) CI",
     # "Tippett (REML) CI",
-    "Tippett (DL) CI",
+    # "Tippett (DL) CI",
     # "Wilkinson (none) CI",
     # "Wilkinson (REML) CI",
-    "Wilkinson (DL) CI",
+    # "Wilkinson (DL) CI",
     # "Hartung & Knapp (none) CI",
     # "Hartung & Knapp (REML) CI",
     "Hartung & Knapp (DL) CI",
     # "Random effects (none) CI",
     # "Random effects (REML) CI",
-    "Random effects (DL) CI",
-    "Henmi & Copas (DL) CI"
+    "Random effects (DL) CI"#,
+    # "Henmi & Copas (DL) CI"
 )
-
 
 # At this point out_sum only has "coverage_true".
 # Here we use all methods, to kick some out just commment them above
 out_sum <- subset(out_sum, method %in% method_order)
+
+# Rename bias to PBias
+out_sum <- within(out_sum, {PBias <- bias; rm(bias)})
+# Convert publication bias to ordered factor
+out_sum <- within(
+    out_sum,
+    {
+        PBias <- factor(PBias, levels = c("none", "moderate", "strong"), ordered = TRUE)
+        method <- factor(method, levels = method_order, ordered = TRUE)
+    }
+)
+
+# Make directories
+out_path <- file.path(out_dir, "summary")
+overall_out_path <- file.path(out_path, "overall")
+strat_out_path <- file.path(out_path, "stratified")
+dir.create(overall_out_path, showWarnings = FALSE, recursive = TRUE)
+dir.create(strat_out_path, showWarnings = FALSE, recursive = TRUE)
+
+# Set types of plots
+opts <- list(
+    dist = unique(out_sum$dist),
+    effect = unique(out_sum$effect),
+    large = unique(out_sum$large),
+    PBias = unique(out_sum$PBias)
+)
+
+msrs <- unique(out_sum$measure)
+
+
+# Convert this to factor
+
+
 
 # totitle <- function(string) {
 #     stopifnot(
@@ -1154,6 +1175,28 @@ out_sum <- subset(out_sum, method %in% method_order)
 #     paste0(string, collapse = " ")
 # }
 
+get_title_param <- function(param) {
+    switch(
+        param,
+        "dist" = "distribution",
+        "eff" = "effect",
+        "large" = "number of large studies",
+        "PBias" = "publication bias"
+    )
+}
+
+get_title_me <- function(me) {
+    switch(
+        me,
+        "coverage_mean" = "coverage of the mean",
+        "coverage_median" = "coverage of the median",
+        "bias_mean" = "bias of the mean",
+        "bias_median" = "bias of the median",
+        "width" = "width",
+        "correlation" = "correlation",
+    )
+}
+
 transparency <- 0.6
 
 for (x in seq_along(msrs)) {
@@ -1161,50 +1204,155 @@ for (x in seq_along(msrs)) {
     me <- msrs[x]
     cur_data <- out_sum |> filter(measure == me)
     for (y in seq_along(opts)) {
+        # Get facets
         param <- names(opts)[y]
         levels <- opts[[y]]
-        gb <- lapply(list("method", "k", "I2"), as.name)
-        gb <- append(gb, list(as.name(param)))
-        img_data <- cur_data |>
-            group_by(!!!gb) |>
+        # construct a list of names that we want to group the data by
+        gb_o <- lapply(list("method", "k", "I2"), as.name)
+        gb_o <- append(gb_o, list(as.name(param)))
+        # Set some variables for the plot title, as these are used in all plots
+        # title_me <- get_title_me(me = me)
+        # title_param <- get_title_param(param = param)
+        # plot_title <- paste0(
+        #     "Minimum, mean, and maximum ",
+        #     title_me,
+        #     " by method and ",
+        #     title_param
+        # )
+        # Do stuff for stratification
+        ## if the facet variable is dist or PBias, also add the other one as a
+        ## grouping variable for stratified plots
+        is_dist <- param == "dist"
+        is_PBias <- param == "PBias"
+        do_strat <- is_dist || is_PBias
+        if (do_strat) {
+            # Generate the group by variables
+            gb_s <- if (is_dist) {
+                append(gb_o, list(as.name("PBias")))
+            } else if (is_PBias) {
+                append(gb_o, list(as.name("dist")))
+            }
+            # Determine the other parameter and levels
+            other_param <- if (is_dist) "PBias" else "dist"
+            other_levels <- opts[[other_param]]
+            # Get the stratified data ready
+            img_data_s <- cur_data |>
+                group_by(!!!gb_s) |>
+                summarise(
+                    min = min(value),
+                    mean = mean(value),
+                    max = max(value),
+                    .groups = "drop"
+                )
+            # Get the first parts of the plot title
+            # plot_title_s <- paste0(
+            #     plot_title,
+            #     " with ",
+            #     get_title_param(param = other_param),
+            #     " = "
+            # )
+            # Loop over the other_param levels and create a plot for each
+            for (l in other_levels) {
+                filt <- bquote(expr = .(as.name(other_param)) == .(as.character(l)))
+                dat_sub <- img_data_s |> filter(eval(filt))
+                # title_s <- paste0(plot_title_s, l)
+                ylimes_s <- with(dat_sub, c(min(min), max(max)))
+                # Loop over the methods
+                plots <- lapply(seq_along(method_order), function(m) {
+                    meth <- method_order[m]
+                    # filt <- bquote(expr = .(as.name(other_param)) == .(as.character(l)))
+                    dat <- dat_sub |> filter(method == meth)
+                    # if no data, don't produce a plot
+                    if (nrow(dat) == 0L) return(NULL)
+                    ref0.95 <- grepl("coverage", me, fixed = TRUE)
+                    ref0 <- grepl("correlation|bias", me, fixed = FALSE)
+                    p <- ggplot(dat, aes(x = k, y = mean, color = I2, group = I2))
+                    if (ref0.95) {
+                        yint <- 0.95
+                    } else if (ref0) {
+                        yint <- 0
+                    }
+                    if ((ref0.95 || ref0) && (yint > ylimes_s[1] && yint < ylimes_s[2])) {
+                        p <- p +
+                        geom_hline(yintercept = yint, color = "black", lty = 2, alpha = 0.5)
+                    }
+                    p <- p +
+                    geom_point(position = position_dodge(width = 0.5)) +
+                    geom_errorbar(
+                        aes(ymin = min, ymax = max),
+                        # position = "dodge",
+                        position = position_dodge(width = 0.5),
+                        width = 0.4
+                        # alpha = transparency
+                    ) +
+                    # scale_color_discrete(name = expression(I^2)) +
+                    facet_wrap(~eval(as.name(param)), ncol = 1L) +
+                    ylim(ylimes_s) +
+                    th +
+                    theme(
+                        legend.position = "bottom",
+                        plot.title = element_text(hjust = 0.5)
+                    ) #+
+                    # labs(x = "k", y = me, color = bquote(I^2), title = meth)
+                    if (m == 1L) {
+                        p <- p + labs(x = "k", y = me, color = bquote(I^2), title = meth)
+                    } else {
+                        p <- p + labs(x = "k", y = NULL, color = bquote(I^2), title = meth)
+                    }
+                    p
+                }) 
+                plots <- plots[!sapply(plots, is.null)]
+                plots <- plots |>
+                    wrap_plots(guides = "collect", ncol = length(plots)) &
+                    # plot_annotation(title = title_s) &
+                    theme(legend.position = "bottom")
+                filename <- file.path(
+                    strat_out_path,
+                    paste0(
+                        toupper(param), "_", me, "_", other_param,
+                        "_", as.character(l), ".png"
+                    )
+                )
+                cat("\33[2K\rMaking file: ", filename, fill = TRUE)
+                ggsave(
+                    filename = filename,
+                    device = ragg::agg_png,
+                    plot = plots,
+                    width = length(levels) * 5,
+                    height = length(method_order) * 5,
+                    units = "in"
+                )
+            }
+        }
+        img_data_o <- cur_data |>
+            group_by(!!!gb_o) |>
             summarise(
                 min = min(value),
                 mean = mean(value),
                 max = max(value),
                 .groups = "drop"
             )
-        # Some things for the plots
-        ylimes <- c(min(img_data$min), max(img_data$max))
-        title_me <- switch(
-            me,
-            "coverage_mean" = "coverage of the mean",
-            "coverage_median" = "coverage of the median",
-            "bias_mean" = "bias of the mean",
-            "bias_median" = "bias of the median",
-            "width" = "width",
-            "correlation" = "correlation",
-        )
-        title_param <- switch(
-            param,
-            "dist" = "distribution",
-            "eff" = "effect",
-            "large" = "number of large studies",
-            "bias" = "bias"
-        )
-        plot_title <- paste0(
-            "Minimum, mean, and maximum ",
-            title_me,
-            " by method and ",
-            title_param
-        )
+        # Some things for the overall plots
+        ylimes <- c(min(img_data_o$min), max(img_data_o$max))
         plots <- lapply(method_order, function(z) {
-            dat <- img_data |>
+            dat <- img_data_o |>
                 filter(method == z)
+            # if no data, don't produce a plot
             if (nrow(dat) == 0L) return(NULL)
-            ggplot(dat, aes(x = k, y = mean, color = I2, group = I2)) +
-                # geom_line(position = position_dodge(width = 1)) +
-                # geom_point(position = "dodge") +
-                geom_point(position = position_dodge(width = 0.5)) +
+            p <- ggplot(dat, aes(x = k, y = mean, color = I2, group = I2))
+            is_coverage <- grepl("coverage", me, fixed = TRUE)
+            is_correlation <- grepl("correlation", me, fixed = TRUE)
+            if (is_coverage) {
+                yint <- 0.95
+            } else if (is_correlation) {
+                yint <- 0
+            }
+            if (is_coverage || is_correlation) {
+                p <- p +
+                geom_hline(yintercept = 0.95, color = "black", lty = 2, alpha = 0.5)
+            }
+            p <- p +
+            geom_point(position = position_dodge(width = 0.5)) +
                 geom_errorbar(
                     aes(ymin = min, ymax = max),
                     # position = "dodge",
@@ -1222,10 +1370,10 @@ for (x in seq_along(msrs)) {
         plots <- plots[!sapply(plots, is.null)]
         plots <- plots |>
             wrap_plots(guides = "collect", ncol = 1L) &
-            plot_annotation(title = plot_title) &
+            # plot_annotation(title = plot_title) &
             theme(legend.position = "bottom")
         filename <- file.path(
-            out_path,
+            overall_out_path,
             paste0(toupper(me), "_", param, ".png")
         )
         cat("\33[2K\rMaking file: ", filename, fill = TRUE)
