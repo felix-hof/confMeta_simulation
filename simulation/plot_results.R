@@ -1097,6 +1097,98 @@ for (x in list_seq) { # loop over summary (eg. dist)
 # Debug
 # out_sum_og <- out_sum
 
+# Get the paramSN function to calculate true median
+e <- new.env()
+source(file = "study_simulation.R", local = e)
+paramSN <- e$paramSN
+
+# effect = 0.2
+# k = 3
+# I2 = 0.6
+# dist = "snr"
+# sampleSize = 50
+# large = 2
+# heterogeneity = "additive"
+# alpha = 8
+
+calc_median_sn <- function(effect, I2, k, dist, sampleSize, large, heterogeneity, alpha){
+
+    if (is.factor(k)) k <- as.numeric(as.character(k))
+    if (is.factor(I2)) I2 <- as.numeric(as.character(I2))
+    args <- list(effect, I2, k, dist, sampleSize, large, heterogeneity)
+    print(sapply(args, class))
+    lengths <- sapply(args, length)
+    if (!all(lengths == lengths[1])) stop("Length mismatch.")
+    l <- lengths[1L]
+
+    calc_one_median <- function(effect, dist, I2, k, sampleSize, large, heterogeneity, alpha) {
+        if (dist == "Gaussian") return(effect)
+        # alpha <- 8
+        n <- rep(sampleSize, k)
+        if (large != 0) n[seq_len(large)] <- n[seq_len(large)] * 10
+        if (heterogeneity == "additive") {
+            eps2 <- 1/ k * sum(2 / n)
+            tau2 <- eps2 * I2 / (1 - I2)
+            if (dist == "snl") alpha <- -alpha
+            med <- paramSN(
+                effect = effect,
+                tau2 = tau2,
+                alpha = alpha,
+                median = TRUE
+            )["median"]
+        } else {
+            stop("heterogeneity == 'multiplicative' is not implemented.")
+        }
+        med
+    }
+
+    res <- numeric(l)
+    for (i in seq_len(l)) {
+        res[i] <- calc_one_median(
+            effect = effect[i],
+            dist = dist[i],
+            I2 = I2[i],
+            k = k[i],
+            sampleSize = sampleSize[i],
+            large = large[i],
+            heterogeneity = heterogeneity[i],
+            alpha = 8
+        )
+    }
+    res
+}
+
+# Try to create relative bias
+within(
+    out_sum |> filter(measure %in% c("bias_mean", "bias_median")),
+    {
+        # means are simple
+        means <- effect
+        # medians, not so much
+        medians <- calc_median_sn(
+                effect = effect,
+                k = k,
+                I2 = I2,
+                dist = dist,
+                sampleSize = sampleSize,
+                large = large,
+                heterogeneity = heterogeneity,
+                alpha = 8
+        )
+    }
+)
+
+p <- paramSN(
+    effect = out_sum$effect,
+    tau2 = tau2,
+    alpha = alpha,
+    median = TRUE
+)
+e$simRE
+
+# Calculate relative bias
+
+
 # Set the order of plots
 method_order <- c(
     # "Edgington (none) CI",
@@ -1114,12 +1206,12 @@ method_order <- c(
     # "Wilkinson (none) CI",
     # "Wilkinson (REML) CI",
     # "Wilkinson (DL) CI",
-    # "Hartung & Knapp (none) CI",
-    # "Hartung & Knapp (REML) CI",
-    "Hartung & Knapp (DL) CI",
     # "Random effects (none) CI",
     # "Random effects (REML) CI",
-    "Random effects (DL) CI"#,
+    "Random effects (DL) CI",
+    # "Hartung & Knapp (none) CI",
+    # "Hartung & Knapp (REML) CI",
+    "Hartung & Knapp (DL) CI"#,
     # "Henmi & Copas (DL) CI"
 )
 
@@ -1129,7 +1221,12 @@ out_sum <- subset(out_sum, method %in% method_order)
 
 # Rename bias to PBias
 out_sum <- within(out_sum, {PBias <- bias; rm(bias)})
-# Convert publication bias to ordered factor
+
+
+# Remove certain levels from the plots
+out_sum <- out_sum |> filter(dist != "snr")
+
+# Convert publication bias and method to ordered factor
 out_sum <- within(
     out_sum,
     {
@@ -1137,6 +1234,8 @@ out_sum <- within(
         method <- factor(method, levels = method_order, ordered = TRUE)
     }
 )
+
+
 
 # Make directories
 out_path <- file.path(out_dir, "summary")
@@ -1334,38 +1433,63 @@ for (x in seq_along(msrs)) {
             )
         # Some things for the overall plots
         ylimes <- c(min(img_data_o$min), max(img_data_o$max))
-        plots <- lapply(method_order, function(z) {
+        plots <- lapply(seq_along(method_order), function(m) {
+            meth <- method_order[m]
             dat <- img_data_o |>
-                filter(method == z)
+                filter(method == meth)
             # if no data, don't produce a plot
             if (nrow(dat) == 0L) return(NULL)
             p <- ggplot(dat, aes(x = k, y = mean, color = I2, group = I2))
-            is_coverage <- grepl("coverage", me, fixed = TRUE)
-            is_correlation <- grepl("correlation", me, fixed = TRUE)
-            if (is_coverage) {
+            ref0.95 <- grepl("coverage", me, fixed = TRUE)
+            ref0 <- grepl("correlation|bias", me, fixed = FALSE)
+            if (ref0.95) {
                 yint <- 0.95
-            } else if (is_correlation) {
+            } else if (ref0) {
                 yint <- 0
             }
-            if (is_coverage || is_correlation) {
+            if ((ref0.95 || ref0) && (yint > ylimes_s[1] && yint < ylimes_s[2])) {
                 p <- p +
-                geom_hline(yintercept = 0.95, color = "black", lty = 2, alpha = 0.5)
+                geom_hline(yintercept = yint, color = "black", lty = 2, alpha = 0.5)
             }
             p <- p +
             geom_point(position = position_dodge(width = 0.5)) +
-                geom_errorbar(
-                    aes(ymin = min, ymax = max),
-                    # position = "dodge",
-                    position = position_dodge(width = 0.5),
-                    width = 0.4
-                    # alpha = transparency
-                ) +
-                # scale_color_discrete(name = expression(I^2)) +
-                facet_wrap(~eval(as.name(param))) +
-                ylim(ylimes) +
-                th +
-                theme(legend.position = "bottom") +
-                labs(y = z, color = bquote(I^2))
+            geom_errorbar(
+                aes(ymin = min, ymax = max),
+                # position = "dodge",
+                position = position_dodge(width = 0.5),
+                width = 0.4
+                # alpha = transparency
+            ) +
+            # scale_color_discrete(name = expression(I^2)) +
+            facet_wrap(~eval(as.name(param)), ncol = 1L) +
+            ylim(ylimes_s) +
+            th +
+            theme(
+                legend.position = "bottom",
+                plot.title = element_text(hjust = 0.5)
+            ) #+
+            # labs(x = "k", y = me, color = bquote(I^2), title = meth)
+            if (m == 1L) {
+                p <- p + labs(x = "k", y = me, color = bquote(I^2), title = meth)
+            } else {
+                p <- p + labs(x = "k", y = NULL, color = bquote(I^2), title = meth)
+            }
+            p
+            # p <- p +
+            # geom_point(position = position_dodge(width = 0.5)) +
+            #     geom_errorbar(
+            #         aes(ymin = min, ymax = max),
+            #         # position = "dodge",
+            #         position = position_dodge(width = 0.5),
+            #         width = 0.4
+            #         # alpha = transparency
+            #     ) +
+            #     # scale_color_discrete(name = expression(I^2)) +
+            #     facet_wrap(~eval(as.name(param))) +
+            #     ylim(ylimes) +
+            #     th +
+            #     theme(legend.position = "bottom") +
+            #     labs(y = z, color = bquote(I^2))
         }) 
         plots <- plots[!sapply(plots, is.null)]
         plots <- plots |>
