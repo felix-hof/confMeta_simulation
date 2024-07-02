@@ -43,8 +43,23 @@ source("studies2cis.R")
 source("cis2measures.R")
 source("measures2summary.R")
 
-## Create the directory where we want to save the results
-dir.create("RData", showWarnings = FALSE)
+## Function to generate file paths if intermediate data is saved
+generate_path <- function(data_path, pars) {
+    file.path(
+        data_path,
+        paste0(
+            paste(
+                vapply(
+                    seq_along(pars),
+                    function(x) paste(names(pars)[x], pars[[x]], sep = "_"),
+                    character(1L)
+                ),
+                collapse = "-"
+            ),
+            ".rds"
+        )
+    )
+}
 
 ################################################################################
 #                          Wrap everything in one function                     #
@@ -75,7 +90,8 @@ sim <- function(
     grid,
     N = 1e4,
     cores = detectCores(),
-    seed = as.numeric(Sys.time())
+    seed = as.numeric(Sys.time()),
+    save_data = FALSE
 ) {
 
     types <- vapply(grid, typeof, character(1L), USE.NAMES = TRUE)
@@ -122,6 +138,13 @@ sim <- function(
     registerDoParallel(cores)
     on.exit(stopImplicitCluster())
 
+    ## Create the directory where we want to save the results
+    dir.create("RData", showWarnings = FALSE)
+    if (save_data) {
+        data_path <- file.path("RData", "CIs")
+        dir.create(data_path, showWarnings = FALSE)
+    }
+
     # run simulation
     o <- foreach::foreach(
         j = seq_len(nrow(grid)),
@@ -144,6 +167,8 @@ sim <- function(
             # av is a list with elements that are either a data.frame or NA
             # (the latter in case of an error)
             av <- vector("list", length = N)
+            # Create a second list that we save the intermediate CIs in
+            int_cis <- vector("list", length = N)
             # Also keep track of the average probabilities when simulating
             # publication bias
             pb <- pars$bias != "none"
@@ -155,17 +180,25 @@ sim <- function(
                 res <- sim_effects(pars = pars, i = i)
                 if (pb) p_accept[i] <- attributes(res)$p_accept
                 CIs <- calc_ci(x = res, pars = pars, i = i)
+                if (save_data) {
+                    int_cis[[i]] <- merge.data.frame(
+                        CIs$estimates,
+                        CIs$CIs[, c("lower", "upper", "method")],
+                        by = "method",
+                        all = TRUE,
+                        sort = FALSE
+                    )
+                }
                 av[[i]] <- calc_measures(x = CIs, pars = pars, i = i)
-                # if (anyNA(av[[i]]$value)) stop("Found the NA")
-                # en <- Sys.time()
-                # rt <- en - st
-                # cat(
-                #     paste0(
-                #         "Iteration ", i, " took ", round(rt, 2), " ",
-                #         attributes(rt)$units, " to run."
-                #     ),
-                #     fill = TRUE
-                # )
+            }
+
+            # save the intermediate CIs to disk
+            if (save_data) {
+                ci_data <- list(pars = pars, cis = int_cis)
+                saveRDS(
+                    object = ci_data,
+                    file = generate_path(data_path = data_path, pars = pars)
+                )
             }
 
             # summarize the N tibbles.
@@ -241,7 +274,8 @@ grid <- expand.grid(
     # distribution
     dist = c("Gaussian", "snr", "snl"),
     # bias
-    bias = c("none", "moderate", "strong"),
+    bias = "none",
+    # bias = c("none", "moderate", "strong"),
     # number of large studies
     large = c(0L, 1L, 2L),
     stringsAsFactors = FALSE
@@ -271,14 +305,14 @@ if (machine == "T14s") {
     # grid <- grid[floor(seq(1, 1080, length.out = 160)), ]
 } else if (machine == "david") {
     # The math institute has a server called "david" with 80 CPU cores
-    N <- 2.5e3
+    N <- 1e4
     cores <- 60
 } else if (machine == "rambo") {
     # The math institute has a server called "rambo" with 128 CPU cores
-    N <- 2.5e3
+    N <- 1e4
     cores <- 124
 } else if (machine == "box") {
-    N <- 2.5e3
+    N <- 1e4
     cores <- 230
 } else {
     stop(
@@ -298,7 +332,7 @@ cat(paste0("Running every scenario ", N, " times."), fill = TRUE)
 cat(paste0("In total there are ", nrow(grid), " simulation scenarios."), fill = TRUE)
 cat(paste0("Simulation will be run on ", cores, " CPU cores."), fill = TRUE)
 start <- Sys.time()
-out <- sim(grid = grid, N = N, cores = cores)
+out <- sim(grid = grid, N = N, cores = cores, save_data = TRUE)
 end <- Sys.time()
 run_time <- end - start
 cat(
@@ -317,3 +351,4 @@ attr(out, which = "runtime") <- run_time
 sessionInfo <- sessionInfo()
 print(sessionInfo)
 save(out, sessionInfo, file = "RData/simulate_all.RData")
+
