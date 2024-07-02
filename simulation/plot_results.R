@@ -203,8 +203,16 @@ out_dir <- "newFigures"
 
 # styles for the plots
 th <- theme(
-    text = element_text(size = 9),
-    plot.title = element_text(size = 10),
+    # text = element_text(size = 13),
+    axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 11),
+    axis.title.x = element_text(size = 13),
+    axis.title.y = element_text(size = 13),
+    strip.text = element_text(size = 11),
+    legend.text = element_text(size = 13),
+    legend.title = element_text(size = 15),
+    legend.position = "bottom",
+    plot.title = element_text(size = 17),
     panel.grid = element_line(
         color = "lightgrey",
         linewidth = 0.5,
@@ -212,6 +220,9 @@ th <- theme(
     )
 )
 
+line_width <- 1
+point_size <- 3
+errorbar_width <- 1
 
 #' #' Helper function to plot means
 #' #' @param data obtained by simulate_all.R and saved in RData/simulate_all.RData
@@ -228,6 +239,8 @@ plotPanels <- function(
         "data_skewness", "kappa", "correlation"
     ),
     by = c("method", "I2"),
+    line_width,
+    point_size,
     plotVar
 ) {
 
@@ -291,8 +304,8 @@ plotPanels <- function(
                 mapping = aes(x = k, y = eval(as.name(plotVar)), color = I2)
             ) +
             facet_wrap(~method) +
-            geom_point() +
-            stat_summary(fun = "mean", geom = "line", aes(group = I2)) +
+            geom_point(size = point_size) +
+            stat_summary(fun = "mean", geom = "line", aes(group = I2), linewidth = line_width) +
             scale_color_discrete(name = expression(I^2)) +
             xlab("# studies")
 
@@ -307,8 +320,8 @@ plotPanels <- function(
             mutate(I2 = as.character(I2)) |>
             ggplot(mapping = aes(x = k, y = value, color = method)) +
             facet_wrap(~ I2, labeller = label_bquote(I^2 == .(I2))) +
-            geom_point() +
-            stat_summary(fun = "mean", geom = "line", aes(group = method)) +
+            geom_point(size = 1) +
+            stat_summary(fun = "mean", geom = "line", aes(group = method), linewidth = 1) +
             xlab("# studies")
     }
 
@@ -317,12 +330,11 @@ plotPanels <- function(
             geom_hline(yintercept = 0.95, lty = 2, alpha = 0.5)
     }
 
-    p
+    p + th
 }
 
 # for debugging purposes: Turn warnings into errors
 options(warn = 2)
-
 
 
 ## Mean plots ------------------------------------------------------------------
@@ -419,7 +431,9 @@ for (x in list_seq) { # loop over summary (eg. dist)
                                 plotPanels(
                                     measure = me,
                                     by = "method",
-                                    plotVar = l$plotVar
+                                    plotVar = l$plotVar,
+                                    line_width = line_width,
+                                    point_size = point_size
                                 ) +
                                 ggtitle(eval(title)) +
                                 th
@@ -905,10 +919,7 @@ for (x in list_seq) { # loop over summary (eg. dist)
                     xlab("# studies") +
                     ylab(me) +
                     ggtitle(eval(title)) +
-                    theme(
-                        text = element_text(size = 9),
-                        plot.title = element_text(size = 10)
-                    )
+                    th
             }
         ) |>
             wrap_plots(guides = "collect") &
@@ -1116,7 +1127,7 @@ calc_median_sn <- function(effect, I2, k, dist, sampleSize, large, heterogeneity
     if (is.factor(k)) k <- as.numeric(as.character(k))
     if (is.factor(I2)) I2 <- as.numeric(as.character(I2))
     args <- list(effect, I2, k, dist, sampleSize, large, heterogeneity)
-    print(sapply(args, class))
+    # print(sapply(args, class))
     lengths <- sapply(args, length)
     if (!all(lengths == lengths[1])) stop("Length mismatch.")
     l <- lengths[1L]
@@ -1159,7 +1170,7 @@ calc_median_sn <- function(effect, I2, k, dist, sampleSize, large, heterogeneity
 }
 
 # Try to create relative bias
-within(
+rel_bias <- within(
     out_sum |> filter(measure %in% c("bias_mean", "bias_median")),
     {
         # means are simple
@@ -1175,18 +1186,18 @@ within(
                 heterogeneity = heterogeneity,
                 alpha = 8
         )
+        value <- ifelse(
+            grepl("mean", measure),
+            value / means,
+            value / medians
+        ) 
+        measure <- paste0("rel_", measure)
+        rm(means, medians)
     }
 )
 
-p <- paramSN(
-    effect = out_sum$effect,
-    tau2 = tau2,
-    alpha = alpha,
-    median = TRUE
-)
-e$simRE
-
-# Calculate relative bias
+out_sum <- rbind(out_sum, rel_bias)
+# View(tail(out_sum, n = 500))
 
 
 # Set the order of plots
@@ -1219,6 +1230,9 @@ method_order <- c(
 # Here we use all methods, to kick some out just commment them above
 out_sum <- subset(out_sum, method %in% method_order)
 
+# Rename methods (remove ' (DL) CI')
+out_sum$method <- sub(" (DL) CI", "", out_sum$method, fixed = TRUE)
+
 # Rename bias to PBias
 out_sum <- within(out_sum, {PBias <- bias; rm(bias)})
 
@@ -1227,6 +1241,7 @@ out_sum <- within(out_sum, {PBias <- bias; rm(bias)})
 out_sum <- out_sum |> filter(dist != "snr")
 
 # Convert publication bias and method to ordered factor
+method_order <- sub(" (DL) CI", "", method_order, fixed = TRUE)
 out_sum <- within(
     out_sum,
     {
@@ -1376,23 +1391,19 @@ for (x in seq_along(msrs)) {
                         geom_hline(yintercept = yint, color = "black", lty = 2, alpha = 0.5)
                     }
                     p <- p +
-                    geom_point(position = position_dodge(width = 0.5)) +
+                    geom_point(position = position_dodge(width = 0.5), size = point_size) +
                     geom_errorbar(
                         aes(ymin = min, ymax = max),
-                        # position = "dodge",
                         position = position_dodge(width = 0.5),
+                        linewidth = errorbar_width,
                         width = 0.4
-                        # alpha = transparency
                     ) +
-                    # scale_color_discrete(name = expression(I^2)) +
                     facet_wrap(~eval(as.name(param)), ncol = 1L) +
                     ylim(ylimes_s) +
                     th +
                     theme(
-                        legend.position = "bottom",
                         plot.title = element_text(hjust = 0.5)
-                    ) #+
-                    # labs(x = "k", y = me, color = bquote(I^2), title = meth)
+                    )
                     if (m == 1L) {
                         p <- p + labs(x = "k", y = me, color = bquote(I^2), title = meth)
                     } else {
@@ -1417,8 +1428,8 @@ for (x in seq_along(msrs)) {
                     filename = filename,
                     device = ragg::agg_png,
                     plot = plots,
-                    width = length(levels) * 5,
-                    height = length(method_order) * 5,
+                    width = length(method_order) * 5,
+                    height = length(levels) * 5,
                     units = "in"
                 )
             }
@@ -1432,7 +1443,7 @@ for (x in seq_along(msrs)) {
                 .groups = "drop"
             )
         # Some things for the overall plots
-        ylimes <- c(min(img_data_o$min), max(img_data_o$max))
+        ylimes_o <- c(min(img_data_o$min), max(img_data_o$max))
         plots <- lapply(seq_along(method_order), function(m) {
             meth <- method_order[m]
             dat <- img_data_o |>
@@ -1457,15 +1468,15 @@ for (x in seq_along(msrs)) {
                 aes(ymin = min, ymax = max),
                 # position = "dodge",
                 position = position_dodge(width = 0.5),
-                width = 0.4
+                width = errorbar_width,
+                linewidth = line_width
                 # alpha = transparency
             ) +
             # scale_color_discrete(name = expression(I^2)) +
             facet_wrap(~eval(as.name(param)), ncol = 1L) +
-            ylim(ylimes_s) +
+            ylim(ylimes_o) +
             th +
             theme(
-                legend.position = "bottom",
                 plot.title = element_text(hjust = 0.5)
             ) #+
             # labs(x = "k", y = me, color = bquote(I^2), title = meth)
@@ -1493,7 +1504,7 @@ for (x in seq_along(msrs)) {
         }) 
         plots <- plots[!sapply(plots, is.null)]
         plots <- plots |>
-            wrap_plots(guides = "collect", ncol = 1L) &
+            wrap_plots(guides = "collect", ncol = length(plots)) &
             # plot_annotation(title = plot_title) &
             theme(legend.position = "bottom")
         filename <- file.path(
@@ -1505,8 +1516,8 @@ for (x in seq_along(msrs)) {
             filename = filename,
             device = ragg::agg_png,
             plot = plots,
-            width = length(levels) * 5,
-            height = length(method_order) * 5,
+            width = length(method_order) * 5,
+            height = length(levels) * 5,
             units = "in"
         )
     }
