@@ -61,6 +61,17 @@ generate_path <- function(data_path, pars) {
     )
 }
 
+# Extract the skewness of the studies from the data frame
+extract_skewness <- function(df) {
+    meth <- with(df, sub("^.+_(.+)$", "\\1", method))
+    skewness <- df$skewness_data
+    keep <- !duplicated(meth)
+    stats::setNames(
+        skewness[keep],
+        meth[keep]
+    )
+}
+
 ################################################################################
 #                          Wrap everything in one function                     #
 ################################################################################
@@ -131,7 +142,8 @@ sim <- function(
     # check other arguments
     stopifnot(
         is.numeric(N), length(N) == 1L, 1 <= N,
-        is.numeric(seed), length(seed) == 1L
+        is.numeric(seed), length(seed) == 1L,
+        isTRUE(save_data) || isFALSE(save_data)
     )
 
     # register parallel backend
@@ -181,12 +193,15 @@ sim <- function(
                 if (pb) p_accept[i] <- attributes(res)$p_accept
                 CIs <- calc_ci(x = res, pars = pars, i = i)
                 if (save_data) {
-                    int_cis[[i]] <- merge.data.frame(
-                        CIs$estimates,
-                        CIs$CIs[, c("lower", "upper", "method")],
-                        by = "method",
-                        all = TRUE,
-                        sort = FALSE
+                    int_cis[[i]] <- list(
+                        CI = merge.data.frame(
+                            CIs$estimates,
+                            CIs$CIs[, c("lower", "upper", "method")],
+                            by = "method",
+                            all = TRUE,
+                            sort = FALSE
+                        ),
+                        data_skewness = extract_skewness(CIs$CIs)
                     )
                 }
                 av[[i]] <- calc_measures(x = CIs, pars = pars, i = i)
@@ -227,6 +242,9 @@ sim <- function(
         out
     }
 
+    # Keep the RNG attribute since rbind deletes attributes
+    rng_att <- attributes(o)$rng
+
     # print size
     cat(
         paste0(
@@ -251,6 +269,7 @@ sim <- function(
 
     # set some attributes and return
     attr(o, "seed") <- seed
+    attr(o, "rng") <- rng_att
     attr(o, "N") <- N
     o
 }
@@ -285,12 +304,12 @@ grid <- expand.grid(
 #     with(
 #         grid,
 #         {
-#             effect == 0.1 &
+#             effect == 0.2 &
 #             I2 == 0.9 &
-#             k == 50L &
-#             dist == "snl" &
-#             bias == "moderate" &
-#             large == 0L
+#             k == 3L &
+#             dist == "snr" &
+#             bias == "none" &
+#             large == 1L
 #         }
 #     )
 # )
@@ -351,4 +370,3 @@ attr(out, which = "runtime") <- run_time
 sessionInfo <- sessionInfo()
 print(sessionInfo)
 save(out, sessionInfo, file = "RData/simulate_all.RData")
-
