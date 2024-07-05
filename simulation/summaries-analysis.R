@@ -1,13 +1,15 @@
+## script to compute summary statistics for the analysis of the simulation study
+## results
+
 ## performance measure and MCSE functions
 ## -----------------------------------------------------------------------------
-
 ## coverage
 coverage <- function(lower, upper, true, na.rm = FALSE) {
     mean((lower <= true) & (upper >= true), na.rm = na.rm)
 }
 coverage_mcse <- function(lower, upper, true, na.rm = FALSE) {
     cov <- coverage(lower = lower, upper = upper, true = true, na.rm = na.rm)
-    n <- length(!is.na(lower) & !is.na(upper))
+    n <- sum(!is.na(lower) & !is.na(upper))
     mcse <- sqrt(cov*(1 - cov)/n)
 
 }
@@ -17,7 +19,7 @@ bias <- function(estimate, true, na.rm = FALSE) {
     mean(estimate, na.rm = na.rm) - true
 }
 bias_mcse <- function(estimate, na.rm = FALSE) {
-    n <- length(!is.na(estimate))
+    n <- sum(!is.na(estimate))
     sd(estimate, na.rm = na.rm)/n
 }
 
@@ -26,7 +28,7 @@ relbias <- function(estimate, true, na.rm = FALSE) {
     (mean(estimate, na.rm = na.rm) - true)/true
 }
 relbias_mcse <- function(estimate, true, na.rm = FALSE) {
-    n <- length(!is.na(estimate))
+    n <- sum(!is.na(estimate))
     sd(estimate, na.rm = na.rm)/n/abs(truemean)
 }
 
@@ -43,7 +45,7 @@ width <- function(lower, upper, na.rm = FALSE) {
     mean(upper - lower, na.rm = na.rm)
 }
 width_mcse <- function(lower, upper, na.rm = FALSE) {
-    n <- length(!is.na(lower) & !is.na(upper))
+    n <- sum(!is.na(lower) & !is.na(upper))
     sd(upper - lower, na.rm = na.rm)/sqrt(n)
 }
 
@@ -51,17 +53,29 @@ width_mcse <- function(lower, upper, na.rm = FALSE) {
 relwidth <- function(lower, upper, reflower, refupper, na.rm = FALSE) {
     mean((upper - lower)/(refupper - reflower), na.rm  = na.rm)
 }
-## relwidth_mcse <- function(lower, upper, na.rm = FALSE) {
-##     ## TODO what is this?
-## }
+relwidth_mcse <- function(lower, upper, reflower, refupper, na.rm = FALSE) {
+    wi <- upper - lower
+    nw <- sum(!is.na(wi))
+    wri <- refupper - reflower
+    nwr <- sum(!is.na(wri))
+    w <- mean(wi, na.rm  = na.rm)
+    sdw <- sd(wi, na.rm  = na.rm)/sqrt(nw)
+    wr <- mean(wri, na.rm  = na.rm)
+    sdwr <- sd(wri, na.rm  = na.rm)/sqrt(nwr)
+    corw <- cor(wi, wri)
+    ## approximation (when w and wr are positive and coefficient of variation of
+    ## w and wr are small, see equation 8 in
+    ## https://doi.org/10.1007/s00362-012-0429-2)
+    w/wr*sqrt(sdw^2/w^2 + sdw^2/wr^2) #- 2*sdw*sdwr*corw/w/wr)
+}
 
 ## empirical variance
 empvar <- function(estimate, na.rm = FALSE) {
-    n <- length(!is.na(estimate))
+    n <- sum(!is.na(estimate))
     var(estimate, na.rm = na.rm)*(n - 1)/n
 }
 empvar_mcse <- function(estimate, na.rm = FALSE) {
-    n <- length(!is.na(estimate))
+    n <- sum(!is.na(estimate))
     var(estimate, na.rm = na.rm)*sqrt(2/(n - 1))
 }
 
@@ -70,7 +84,7 @@ empse <- function(estimate, na.rm = FALSE) {
     sqrt(empvar(estimate, na.rm = na.rm))
 }
 empse_mcse <- function(estimate, na.rm = FALSE) {
-    n <- length(!is.na(estimate))
+    n <- sum(!is.na(estimate))
     sd(estimate, na.rm = na.rm)/sqrt(2*(n - 1))
 }
 
@@ -79,7 +93,7 @@ mse <- function(estimate, true, na.rm = FALSE) {
     mean((estimate - true)^2, na.rm = na.rm)
 }
 mse_mcse <- function(estimate, true, na.rm = FALSE) {
-    n <- length(!is.na(estimate))
+    n <- sum(!is.na(estimate))
     sd((estimate - true)^2, na.rm = na.rm)/n
 }
 
@@ -106,7 +120,7 @@ corskew <- function(CIskew, dataskew, na.rm = FALSE) {
 }
 corskew_mcse <- function(CIskew, dataskew, na.rm = FALSE) {
     cor <- corskew(CIskew, dataskew, na.rm)
-    n <- length(!is.na(CIskew) & !is.na(dataskew))
+    n <- sum(!is.na(CIskew) & !is.na(dataskew))
     sqrt((1 - cor^2)/(n - 2))
 }
 
@@ -264,6 +278,7 @@ summarydat <- mclapply(mc.cores = pmax(detectCores() - 1, 1),
                       width = width(lower, upper, na.rm = TRUE),
                       width_mcse = width_mcse(lower, upper, na.rm = TRUE),
                       relwidth_rema = relwidth(lower, upper, lower_rema, upper_rema, na.rm = TRUE),
+                      relwidth_rema_mcse = relwidth_mcse(lower, upper, lower_rema, upper_rema, na.rm = TRUE),
                       mse_mean = mse(estimate, truemean, na.rm = TRUE),
                       mse_mean_mcse = mse_mcse(estimate, truemean, na.rm = TRUE),
                       mse_median = mse(estimate, truemedian, na.rm = TRUE),
