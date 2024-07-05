@@ -47,6 +47,14 @@ width_mcse <- function(lower, upper, na.rm = FALSE) {
     sd(upper - lower, na.rm = na.rm)/sqrt(n)
 }
 
+## relative CI width
+relwidth <- function(lower, upper, reflower, refupper, na.rm = FALSE) {
+    mean((upper - lower)/(refupper - reflower), na.rm  = na.rm)
+}
+## relwidth_mcse <- function(lower, upper, na.rm = FALSE) {
+##     ## TODO what is this?
+## }
+
 ## empirical variance
 empvar <- function(estimate, na.rm = FALSE) {
     n <- length(!is.na(estimate))
@@ -125,7 +133,6 @@ kappaskew_mcse <- function(CIskew, dataskew, na.rm = FALSE) {
     kappaskew(CIskew, dataskew, na.rm, mcse = TRUE)
 }
 
-## TODO relative width?
 
 ## process data from simulation study
 library(data.table)
@@ -173,6 +180,40 @@ summarydat <- mclapply(mc.cores = pmax(detectCores() - 1, 1),
     }))
     estimates <- as.data.table(estimates)
 
+    ## add RE-MA confidence interval as reference for computing relative width
+    ## lowerrema, upperrema
+    estimates_rema_none <- estimates[method == "reml_ci_additive_none",
+                                     .(repetition, lower_rema_none = lower,
+                                       upper_rema_none = upper)]
+    estimates_rema_dl <- estimates[method == "reml_ci_additive_DL",
+                                   .(repetition, lower_rema_dl = lower,
+                                     upper_rema_dl = upper)]
+    estimates_rema_reml <- estimates[method == "reml_ci_additive_REML",
+                                     .(repetition, lower_rema_reml = lower,
+                                       upper_rema_reml = upper)]
+    estimates <- merge(estimates, estimates_rema_none)
+    estimates <- merge(estimates, estimates_rema_dl)
+    estimates <- merge(estimates, estimates_rema_reml)
+    none_mtds <- c("hk_ci_additive_none", "reml_ci_additive_none",
+                   "tippett_ci_additive_none", "pearson_ci_additive_none",
+                   "wilkinson_ci_additive_none", "edgington_ci_additive_none")
+    DL_mtds <- c("hk_ci_additive_DL", "reml_ci_additive_DL", "hc_ci_additive_DL",
+                 "tippett_ci_additive_DL", "pearson_ci_additive_DL",
+                 "wilkinson_ci_additive_DL", "edgington_ci_additive_DL")
+    REML_mtds <- c("hk_ci_additive_REML", "reml_ci_additive_REML",
+                   "tippett_ci_additive_REML", "pearson_ci_additive_REML",
+                   "wilkinson_ci_additive_REML", "edgington_ci_additive_REML")
+    estimates$lower_rema <- ifelse(estimates$method %in% none_mtds,
+                                   estimates$lower_rema_none,
+                            ifelse(estimates$method %in% DL_mtds,
+                                   estimates$lower_rema_dl,
+                                   estimates$lower_rema_reml))
+    estimates$upper_rema <- ifelse(estimates$method %in% none_mtds,
+                                   estimates$upper_rema_none,
+                            ifelse(estimates$method %in% DL_mtds,
+                                   estimates$upper_rema_dl,
+                                   estimates$upper_rema_reml))
+
     ## compute CI skewnewss
     estimates$CIskew <- ifelse(estimates$method %in%
                                c("hk_ci_additive_none", "reml_ci_additive_none",
@@ -188,20 +229,20 @@ summarydat <- mclapply(mc.cores = pmax(detectCores() - 1, 1),
     }))
     skewness <- as.data.table(skewness)
     ## merge the data skewness to method with corresponding heterogeneity
-    none_mtds <- c("hk_ci_additive_none", "reml_ci_additive_none",
-                   "tippett_ci_additive_none", "pearson_ci_additive_none",
-                   "wilkinson_ci_additive_none", "edgington_ci_additive_none")
-    DL_mtds <- c("hk_ci_additive_DL", "reml_ci_additive_DL", "hc_ci_additive_DL",
-                 "tippett_ci_additive_DL", "pearson_ci_additive_DL",
-                 "wilkinson_ci_additive_DL", "edgington_ci_additive_DL")
-    REML_mtds <- c("hk_ci_additive_REML", "reml_ci_additive_REML",
-                   "tippett_ci_additive_REML", "pearson_ci_additive_REML",
-                   "wilkinson_ci_additive_REML", "edgington_ci_additive_REML")
     estimates <- merge(estimates, skewness, by = "repetition")
     estimates$dataskew <- ifelse(estimates$method %in% none_mtds,
                                  estimates$none,
                           ifelse(estimates$method %in% DL_mtds, estimates$DL,
                                  estimates$REML))
+
+    ## drop unnecessary columns
+    estimates <- estimates[,c("lower_rema_none","upper_rema_none",
+                              "lower_rema_dl","upper_rema_dl",
+                              "lower_rema_reml","upper_rema_reml",
+                              "none", "DL", "REML"):=NULL]
+    ## TODO we may want to save all estimates combined with the condition?
+    ## (perhaps that's too big, but would be the most fine-grained format of the
+    ## simulation results apart from the raw data)
 
     ## compute performance measures and their MCSEs
     summaries <-
@@ -222,6 +263,7 @@ summarydat <- mclapply(mc.cores = pmax(detectCores() - 1, 1),
                       empse_mcse = empse_mcse(estimate, na.rm = TRUE),
                       width = width(lower, upper, na.rm = TRUE),
                       width_mcse = width_mcse(lower, upper, na.rm = TRUE),
+                      relwidth_rema = relwidth(lower, upper, lower_rema, upper_rema, na.rm = TRUE),
                       mse_mean = mse(estimate, truemean, na.rm = TRUE),
                       mse_mean_mcse = mse_mcse(estimate, truemean, na.rm = TRUE),
                       mse_median = mse(estimate, truemedian, na.rm = TRUE),
@@ -237,7 +279,12 @@ summarydat <- mclapply(mc.cores = pmax(detectCores() - 1, 1),
                       correlation_skew = corskew(CIskew, dataskew, na.rm = TRUE),
                       correlation_skew_mcse = corskew_mcse(CIskew, dataskew, na.rm = TRUE),
                       kappa_skew = kappaskew(CIskew, dataskew, na.rm = TRUE),
-                      kappa_skew_mcse = kappaskew_mcse(CIskew, dataskew, na.rm = TRUE)
+                      kappa_skew_mcse = kappaskew_mcse(CIskew, dataskew, na.rm = TRUE),
+                      ciskew_mean = mean(CIskew, na.rm = TRUE),
+                      ciskew_mean_mcse = bias_mcse(CIskew, na.rm = TRUE),
+                      ciskew_median = median(CIskew, na.rm = TRUE),
+                      ciskew_max = max(CIskew, na.rm = TRUE),
+                      ciskew_min = min(CIskew, na.rm = TRUE)
                   ),
                   method]
     return(cbind(condition, summaries))
