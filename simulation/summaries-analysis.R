@@ -68,6 +68,11 @@ relwidth_mcse <- function(lower, upper, reflower, refupper, na.rm = FALSE) {
     ## https://doi.org/10.1007/s00362-012-0429-2)
     w/wr*sqrt(sdw^2/w^2 + sdw^2/wr^2) #- 2*sdw*sdwr*corw/w/wr)
 }
+relwidth_quantile <- function(lower, upper, reflower, refupper, quantile = 0.5,
+                              na.rm = FALSE) {
+    quantile(x = (upper - lower)/(refupper - reflower), probs = quantile,
+             na.rm = na.rm)
+}
 
 ## empirical variance
 empvar <- function(estimate, na.rm = FALSE) {
@@ -279,6 +284,9 @@ summarydat <- mclapply(mc.cores = pmax(detectCores() - 1, 1),
                       width_mcse = width_mcse(lower, upper, na.rm = TRUE),
                       relwidth_rema = relwidth(lower, upper, lower_rema, upper_rema, na.rm = TRUE),
                       relwidth_rema_mcse = relwidth_mcse(lower, upper, lower_rema, upper_rema, na.rm = TRUE),
+                      relwidth_rema_50 = relwidth_quantile(lower, upper, lower_rema, upper_rema, 0.5, na.rm = TRUE),
+                      relwidth_rema_10 = relwidth_quantile(lower, upper, lower_rema, upper_rema, 0.1, na.rm = TRUE),
+                      relwidth_rema_90 = relwidth_quantile(lower, upper, lower_rema, upper_rema, 0.9, na.rm = TRUE),
                       mse_mean = mse(estimate, truemean, na.rm = TRUE),
                       mse_mean_mcse = mse_mcse(estimate, truemean, na.rm = TRUE),
                       mse_median = mse(estimate, truemedian, na.rm = TRUE),
