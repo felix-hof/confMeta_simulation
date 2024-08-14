@@ -3,7 +3,6 @@
 This repository contains:
 
   - **simulation/**: Simulation study comparing *p*-value combination methods for meta-analysis.
-  - **shiny/**: A shiny app that visualizes the simulation results. Currently under construction.
   - **run_pipeline.sh**: Shell script that runs the simulation and pushes the resulting files to Github.
 
 ## sessionInfo output of the last simulation run
