@@ -205,7 +205,9 @@ sim <- function(
                             all = TRUE,
                             sort = FALSE
                         ),
-                        data_skewness = extract_skewness(CIs$CIs)
+                        data_skewness = extract_skewness(CIs$CIs),
+                        aucc = CIs$aucc,
+                        aucc_ratio = CIs$aucc_ratio
                     )
                 }
                 av[[i]] <- calc_measures(x = CIs, pars = pars, i = i)
@@ -317,6 +319,8 @@ grid <- expand.grid(
 #         }
 #     )
 # )
+# seed <- 42
+# save_data <- TRUE
 
 # Set some parameters based on available computing machines
 machine <- Sys.info()["nodename"]
