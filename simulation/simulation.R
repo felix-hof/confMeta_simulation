@@ -31,7 +31,7 @@ rm(list = ls())
 # remotes::install_github("felix-hof/confMeta")
 remotes::install_github("felix-hof/confMeta", ref = "dev")
 library(confMeta)
-library(doParallel) 
+library(doParallel)
 library(doRNG)
 library(RhpcBLASctl)
 blas_set_num_threads(1) # multi threading of BLAS
@@ -90,6 +90,10 @@ extract_skewness <- function(df) {
 #' @param N number of replications to be done for each scenario.
 #' @param cores number of CPUs to use for the simulation.
 #' The default value is obtained from \code{detectCores()}.
+#' @param seed The seed value for the random number generator.
+#' @param save_data Indicates whether the individual CIs are stored. If TRUE,
+#' all the CIs from each simulation is stored to disk. If FALSE, only the
+#' summarized measures for each simulation scenario are saved to disk.
 #' @return tibble in long format with columns
 #' \item{sampleSize}{sample size}
 #' \item{I2}{Higgin's I^2 heterogeneity measure}
