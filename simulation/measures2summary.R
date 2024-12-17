@@ -37,7 +37,7 @@ get_gamma_stats <- function(df, col_order) {
     # To the correct subset of df and add
     # some information regarding stat and
     # usage
-    df_sub <- subset(df, measure %in% c("gamma_min", "p_max", "aucc", "aucc_ratio"))
+    df_sub <- subset(df, measure %in% c("gamma_min", "p_max"))
     # list of functions that calculate the desired summary measures
     f_list_gamma <- list(
         min = function(x) {
