@@ -289,7 +289,7 @@ grid <- expand.grid(
     # sample size of trial
     sampleSize = 50L,
     # average effect, impacts selection bias
-    effect = c(0.1, 0.2, 0.5),
+    effect = 0.2, #c(0.1, 0.2, 0.5),
     # Higgin's I^2 heterogeneity measure
     I2 = c(0, 0.3, 0.6, 0.9),
     # number of studies
@@ -339,7 +339,7 @@ if (machine == "T14s") {
     N <- 1e4
     cores <- 124
 } else if (machine == "box") {
-    N <- 1e4
+    N <- 2e4
     cores <- 230
 } else {
     stop(
