@@ -3,7 +3,7 @@ README = README
 data = RData/simulate_all.RData
 
 data: simulation.R
-	Rscript install_packages.R && Rscript simulation.R 2>&1 | tee simulation.Rout
+	Rscript install_packages.R && Rscript simulation.R
 
 figs: data plot_results.R
 	Rscript plot_results.R 2>&1 | tee plot_results.Rout
