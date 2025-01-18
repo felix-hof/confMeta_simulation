@@ -36,7 +36,7 @@ libraries <- do.call(
         ns_calls <- grep(":{2,3}", code, value = TRUE)
         ns <- lapply(
             ns_calls,
-            extract_matches,
+            extract_all,
             pattern = "([[:alnum:]]+?):{2,3}"
         )
         ns <- unique(sub(":{2,3}", "", do.call("c", ns)))
