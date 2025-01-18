@@ -28,10 +28,8 @@
 
 ## Setup
 rm(list = ls())
-# remotes::install_github("felix-hof/confMeta")
-remotes::install_github("felix-hof/confMeta", ref = "dev")
 library(confMeta)
-library(doParallel) 
+library(doParallel)
 library(doRNG)
 library(RhpcBLASctl)
 blas_set_num_threads(1) # multi threading of BLAS
@@ -90,6 +88,10 @@ extract_skewness <- function(df) {
 #' @param N number of replications to be done for each scenario.
 #' @param cores number of CPUs to use for the simulation.
 #' The default value is obtained from \code{detectCores()}.
+#' @param seed The seed value for the random number generator.
+#' @param save_data Indicates whether the individual CIs are stored. If TRUE,
+#' all the CIs from each simulation is stored to disk. If FALSE, only the
+#' summarized measures for each simulation scenario are saved to disk.
 #' @return tibble in long format with columns
 #' \item{sampleSize}{sample size}
 #' \item{I2}{Higgin's I^2 heterogeneity measure}
@@ -102,9 +104,7 @@ sim <- function(
     N = 1e4,
     cores = detectCores(),
     seed = as.numeric(Sys.time()),
-    save_data = FALSE
-) {
-
+    save_data = FALSE) {
     types <- vapply(grid, typeof, character(1L), USE.NAMES = TRUE)
 
     # check grid columns
@@ -163,7 +163,6 @@ sim <- function(
         .options.RNG = seed,
         .errorhandling = "pass"
     ) %dorng% {
-
         # Since we run this in parallel, we have no other means to check
         # whether an error occured than to check for the existence of the
         # file that is written by the error_function. If it exists, an
@@ -201,7 +200,9 @@ sim <- function(
                             all = TRUE,
                             sort = FALSE
                         ),
-                        data_skewness = extract_skewness(CIs$CIs)
+                        data_skewness = extract_skewness(CIs$CIs),
+                        aucc = CIs$aucc,
+                        aucc_ratio = CIs$aucc_ratio
                     )
                 }
                 av[[i]] <- calc_measures(x = CIs, pars = pars, i = i)
@@ -261,11 +262,29 @@ sim <- function(
     # saveRDS(o, file = "RData/o.rds")
 
     # rbind ci_meas lists together
-    o <- tryCatch({
-        do.call("rbind", o)
-    }, error = function(cond) {
-        save(o, file = "RData/partial_sim.RData")
-    })
+    o <- tryCatch(
+        {
+            do.call("rbind", o)
+        },
+        error = function(cond) {
+            # set some attributes and return
+            attr(o, "seed") <- seed
+            attr(o, "rng") <- rng_att
+            attr(o, "N") <- N
+            save(o, file = "RData/partial_sim.RData")
+            NULL
+        }
+    )
+
+    if (is.null(o)) {
+        stop(
+            paste0(
+                "Error in creation of resulting dataframe. ",
+                "Check list elements of the list saved in ",
+                "'RData/partial_sim.RData'."
+            )
+        )
+    }
 
     # set some attributes and return
     attr(o, "seed") <- seed
@@ -283,7 +302,7 @@ grid <- expand.grid(
     # sample size of trial
     sampleSize = 50L,
     # average effect, impacts selection bias
-    effect = 0.2, #c(0.1, 0.2, 0.5),
+    effect = 0.2, # c(0.1, 0.2, 0.5),
     # Higgin's I^2 heterogeneity measure
     I2 = c(0, 0.3, 0.6, 0.9),
     # number of studies
@@ -305,21 +324,23 @@ grid <- expand.grid(
 #         grid,
 #         {
 #             effect == 0.2 &
-#             I2 == 0.9 &
-#             k == 3L &
-#             dist == "snr" &
-#             bias == "none" &
-#             large == 1L
+#                 I2 == 0.9 &
+#                 k == 3L &
+#                 dist == "snr" &
+#                 bias == "none" &
+#                 large == 1L
 #         }
 #     )
 # )
+# seed <- 42
+# save_data <- TRUE
 
 # Set some parameters based on available computing machines
 machine <- Sys.info()["nodename"]
 if (machine == "T14s") {
     # On my machine, run this with N = 5, on 14 cores, and on a smaller grid.
     # This is only used for development, debugging, and testing.
-    N <- 5
+    N <- 50
     cores <- 15
     # grid <- grid[floor(seq(1, 1080, length.out = 160)), ]
 } else if (machine == "david") {
@@ -348,7 +369,10 @@ if (machine == "T14s") {
 
 ## run simulation, e.g., on the Rambo server of I-MATH
 cat(paste0("Running every scenario ", N, " times."), fill = TRUE)
-cat(paste0("In total there are ", nrow(grid), " simulation scenarios."), fill = TRUE)
+cat(
+    paste0("In total there are ", nrow(grid), " simulation scenarios."),
+    fill = TRUE
+)
 cat(paste0("Simulation will be run on ", cores, " CPU cores."), fill = TRUE)
 start <- Sys.time()
 out <- sim(grid = grid, N = N, cores = cores, save_data = TRUE)
@@ -365,6 +389,27 @@ cat(
     fill = TRUE
 )
 attr(out, which = "runtime") <- run_time
+
+# Check some of the results as cause of the error:
+# "Error in attr(o, "seed") <- seed : attempt to set attribute on NULL"
+# This error happens when in the call to rbind when we try to create the data
+# frame from a list. It turned out that the reason for this was that in the
+# cases when one or more of these CIs did not exist, the confMeta function
+# 'get_ci' which did return a misspecified list.
+
+# files <- list.files(path = "RData/CIs", full.names = TRUE)
+# has_na <- logical(length(files))
+# na_cis <- list()
+# for (i in seq_along(files)) {
+#     dat <- readRDS(file = files[i])
+#     cis <- lapply(dat$cis, "[[", i = "CI")
+#     idx <- sapply(cis, \(x) anyNA(x$lower))
+#     if (any(idx)) {
+#         na_cis <- append(na_cis, cis[idx])
+#         has_na[i] <- TRUE
+#     }
+# }
+
 
 ## save results
 sessionInfo <- sessionInfo()

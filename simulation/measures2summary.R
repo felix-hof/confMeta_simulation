@@ -7,7 +7,7 @@ get_mean_stats <- function(df) {
     # Summarise all the measures except gamma_min & p_max
     df_sub <- subset(
         df,
-        !(measure %in% c("gamma_min", "p_max", "mse", "estimate", "ci_skewness"))
+        !(measure %in% c("gamma_min", "p_max", "mse", "estimate", "ci_skewness", "aucc", "aucc_ratio"))
     )
     # This works since mean of a vector of all NAs is just NA
     fun <- function(x) {
@@ -378,7 +378,7 @@ get_skewness_stats <- function(df, col_order) {
                         )
                     )
                     kappa <- if (error_kappa) {
-                        NA_real_ 
+                        NA_real_
                     } else {
                         suppressMessages(
                             suppressWarnings(
@@ -405,7 +405,6 @@ get_skewness_stats <- function(df, col_order) {
             stat_fun = rep(c("cohen.kappa", "cor"), each = ncol(out)),
             usage = "skewness_plot",
             prop = NA_real_
-
         ),
         subset(
             rs,
@@ -454,17 +453,19 @@ get_summary_measures <- function(df, p_accept, pars) {
 
 ## Wrapper that handles possible errors
 calc_summary_measures <- function(df, p_accept, pars, i) {
-    tryCatch({
-        get_summary_measures(df = df, p_accept = p_accept, pars = pars)
-    },
-    error = function(cond) {
-        error_function(
-            cond = cond,
-            pars = pars,
-            error_obj = df,
-            fun_name = "calc_summary_measures",
-            i = i
-        )
-        NA
-    })
+    tryCatch(
+        {
+            get_summary_measures(df = df, p_accept = p_accept, pars = pars)
+        },
+        error = function(cond) {
+            error_function(
+                cond = cond,
+                pars = pars,
+                error_obj = df,
+                fun_name = "calc_summary_measures",
+                i = i
+            )
+            NA
+        }
+    )
 }

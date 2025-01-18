@@ -63,7 +63,8 @@ get_classic_obj_hk <- function(thetahat, se, tau, control) {
         sm = "MD",
         tau.preset = tau,
         # method.tau = "REML",
-        hakn = TRUE,
+        # hakn = TRUE,
+        method.random.ci = "HK",
         control = control
     )
 }
@@ -392,11 +393,16 @@ get_new_ci_gamma <- function(thetahat, se, p_funcs, arguments, methods) {
             stringsAsFactors = FALSE,
             row.names = NULL
         )
+        # AUCC and AUCC ratio
+        aucc <- data.frame(aucc = res$aucc, method = mt)
+        aucc_ratio <- data.frame(aucc_ratio = res$aucc_ratio, method = mt)
         # return list
         ci[[k]] <- list(
             "CI" = CI,
             "estimates" = estimates,
-            "p_max" = p_max
+            "p_max" = p_max,
+            "aucc" = aucc,
+            "aucc_ratio" = aucc_ratio
         )
         # # gamma related stuff
         # gamma[k, ] <- get_gamma_x_y(res$gamma)
@@ -404,7 +410,13 @@ get_new_ci_gamma <- function(thetahat, se, p_funcs, arguments, methods) {
 
     # rbind all of the list elements
     out <- lapply(
-        c("CI" = "CI", "estimates" = "estimates", "p_max" = "p_max"),
+        c(
+            "CI" = "CI",
+            "estimates" = "estimates",
+            "p_max" = "p_max",
+            "aucc" = "aucc",
+            "aucc_ratio" = "aucc_ratio"
+        ),
         function(ci, df) {
             do.call(
                 "rbind",
@@ -619,11 +631,27 @@ sim2CIs <- function(x) {
             list(make.row.names = FALSE)
         )
     )
+    aucc <- do.call(
+        "rbind",
+        append(
+            lapply(new_methods, "[[", i = "aucc"),
+            list(make.row.names = FALSE)
+        )
+    )
+    aucc_ratio <- do.call(
+        "rbind",
+        append(
+            lapply(new_methods, "[[", i = "aucc_ratio"),
+            list(make.row.names = FALSE)
+        )
+    )
 
     list(
         CIs = CIs,
         estimates = estimates,
         p_max = p_max,
+        aucc = aucc,
+        aucc_ratio = aucc_ratio,
         model = att$heterogeneity, # this is the simulation model
         theta = thetahat,
         delta = delta,

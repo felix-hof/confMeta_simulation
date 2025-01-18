@@ -245,6 +245,12 @@ get_measures <- function(is_ci, is_pi, is_new) {
         p_max = quote({
             unique(p_max)
         }),
+        aucc = quote({
+            aucc
+        }),
+        aucc_ratio = quote({
+            aucc_ratio
+        }),
         mse = quote({
             calc_sq_diff(
                 estimates = estimates,
@@ -288,6 +294,8 @@ get_measures <- function(is_ci, is_pi, is_new) {
             "n",
             # "gamma",
             "p_max",
+            "aucc",
+            "aucc_ratio",
             "ci_skewness",
             "data_skewness"
         )
@@ -342,6 +350,12 @@ CI2measures <- function(x, pars) {
     # get estimates
     estimates <- x$estimates$estimate
     estimates_method <- x$estimates$method
+    # get aucc
+    aucc <- x$aucc$aucc
+    aucc_method <- x$aucc$method
+    # get aucc_ratio
+    aucc_ratio <- x$aucc_ratio$aucc_ratio
+    aucc_ratio_method <- x$aucc_ratio$method
     # get the deltas
     delta <- x$delta
     # get the effect (mean)
@@ -376,6 +390,16 @@ CI2measures <- function(x, pars) {
             data_skewness = data_skewness[k],
             p_max = if (curr_is_new) {
                 p_max[p_max_method == curr_method]
+            } else {
+                NULL
+            },
+            aucc = if (curr_is_new) {
+                aucc[aucc_method == curr_method]
+            } else {
+                NULL
+            },
+            aucc_ratio = if (curr_is_new) {
+                aucc_ratio[aucc_ratio_method == curr_method]
             } else {
                 NULL
             },
