@@ -6,17 +6,17 @@ Rscripts <- Rscripts[!grepl("plot", Rscripts)] # remove plotting
 
 # Function for extracting multiple matches
 extract_matches <- function(data, pattern) {
-    start <-  gregexpr(pattern, data)[[1]]
-    stop  <-  start + attr(start, "match.length") - 1
-    if(-1 %in% start) {
-	""    ## **Note** you could return NULL if there are no matches 
+    start <- gregexpr(pattern, data)[[1]]
+    stop <- start + attr(start, "match.length") - 1
+    if (-1 %in% start) {
+        "" ## **Note** you could return NULL if there are no matches
     } else {
-	mapply(substr, start, stop, MoreArgs = list(x = data))
+        mapply(substr, start, stop, MoreArgs = list(x = data))
     }
 }
 
 # extract packages used from all R scripts
-libraries <- lapply(Rscripts, function(x){
+libraries <- lapply(Rscripts, function(x) {
     # read the scripts
     code <- readLines(x, warn = FALSE)
     # throw out comments
@@ -47,32 +47,65 @@ libraries <- lapply(Rscripts, function(x){
 libraries <- unique(unlist(libraries))
 
 # find installed/uninstalled packages
-installed <- vapply(libraries, function(x){
-    out <- tryCatch({
-	find.package(x)
-	TRUE
-    },
-	warning = function(cond){
-	    stop("A warning appeared when installing packages.\nCheck install_packages.R\n")
-	},
-	error = function(cond){
-	    return(FALSE)
-	})
+installed <- vapply(libraries, function(x) {
+    out <- tryCatch(
+        {
+            find.package(x)
+            TRUE
+        },
+        warning = function(cond) {
+            stop("A warning appeared when installing packages.\nCheck install_packages.R\n")
+        },
+        error = function(cond) {
+            return(FALSE)
+        }
+    )
     return(out)
 }, logical(1L), USE.NAMES = TRUE)
 
 # install uninstalled ones CRAN packages
 install_libs <- libraries[!installed]
-if(length(install_libs) == 0){
+if (length(install_libs) == 0) {
     cat("All necessary libraries already installed.\n")
 } else {
-    cat("Installing packages:\n", paste(install_libs, collapse = "\n", "\n"))
-    lapply(install_libs, function(x){
-	out <- tryCatch({install.packages(x, repos = "https://cloud.r-project.org/"); 0L},
-	    warning = function(w) 1L,
-	    error = function(e) 2L)
-	if(out %in% 2L) remotes::install_github(paste0("felix-hof/", x))
-	invisible(NULL)
+    cat(
+        paste0(
+            "Installing packages:\n",
+            paste(install_libs, collapse = "\n"),
+            "\n"
+        )
+    )
+    lapply(install_libs, function(x) {
+        out <- tryCatch(
+            {
+                install.packages(
+                    x,
+                    repos = "https://cloud.r-project.org/",
+                    quiet = TRUE
+                )
+                list(status = 0L, message = NA_character_)
+            },
+            warning = function(w) {
+                message <- conditionMessage(w)
+                list(status = 1L, message = message)
+            },
+            error = function(e) {
+                message <- conditionMessage(e)
+                list(status = 2L, message = message)
+            }
+        )
+        if (out$status %in% 1L) {
+            cat(
+                paste0(
+                    "Installation of package '", x,
+                    "' threw the following warning:\n\n",
+                    out$message
+                )
+            )
+        }
+        if (out %in% 2L) {
+            remotes::install_github(paste0("felix-hof/", x))
+        }
+        invisible(NULL)
     })
 }
-
