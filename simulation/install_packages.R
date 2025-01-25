@@ -1,9 +1,4 @@
-# get a vector of script files
-script_dir <- "."
-Rscripts <- paste0(script_dir, "/", list.files(script_dir))
-Rscripts <- Rscripts[grepl(".R$", Rscripts)]
-Rscripts <- Rscripts[!grepl("plot", Rscripts)] # remove plotting
-
+# Helper function to find all R packages used in the simulation
 extract_all <- function(strings, pattern) {
     lapply(strings, function(string) {
         # Use gregexpr to find all matches and regmatches to extract them
@@ -16,56 +11,76 @@ extract_all <- function(strings, pattern) {
     })
 }
 
+# Function that checks whether libraries are installed
+is_installed <- function(libs) {
+    vapply(
+        libs,
+        function(lib) {
+            out <- tryCatch(
+                {
+                    find.package(lib)
+                    TRUE
+                },
+                warning = function(cond) {
+                    msg <- paste0(
+                        "A warning appeared when installing packages.\n",
+                        "Check install_packages.R\n"
+                    )
+                    stop(msg)
+                },
+                error = function(cond) {
+                    FALSE
+                }
+            )
+        },
+        logical(1L),
+        USE.NAMES = TRUE
+    )
+}
+
+# get a vector of script files
+script_dir <- "."
+Rscripts <- paste0(script_dir, "/", list.files(script_dir))
+Rscripts <- Rscripts[grepl(".R$", Rscripts)]
+Rscripts <- Rscripts[!grepl("plot", Rscripts)] # remove plotting
+
 # extract packages used from all R scripts
-libraries <- do.call(
-    "c",
-    lapply(Rscripts, function(x) {
-        # read the scripts
-        code <- readLines(x, warn = FALSE)
-        # throw out comments
-        code <- gsub("#.*$", "", code)
-        # get all the calls to library or require
-        lib_pat <- "\\s*library\\s*\\((.+?)\\)"
-        req_pat <- "require\\s*\\((.+?)\\)"
-        lib_lines <- grep(lib_pat, code, value = TRUE)
-        req_lines <- grep(req_pat, code, value = TRUE)
-        # Extract the libraries
-        libs <- do.call("c", extract_all(lib_lines, lib_pat))
-        reqs <- do.call("c", extract_all(req_lines, req_pat))
-        # Get namespaced calls
-        ns_calls <- grep(":{2,3}", code, value = TRUE)
-        ns <- lapply(
-            ns_calls,
-            extract_all,
-            pattern = "([[:alnum:]]+?):{2,3}"
-        )
-        ns <- unique(sub(":{2,3}", "", do.call("c", ns)))
-        # return all libraries
-        pkgs <- unique(c(libs, reqs, ns))
-        pkgs
-    })
+libraries <- unique(
+    do.call(
+        "c",
+        lapply(Rscripts, function(x) {
+            # read the scripts
+            code <- readLines(x, warn = FALSE)
+            # throw out comments
+            code <- gsub("#.*$", "", code)
+            # get all the calls to library or require
+            lib_pat <- "\\s*library\\s*\\((.+?)\\)"
+            req_pat <- "require\\s*\\((.+?)\\)"
+            lib_lines <- grep(lib_pat, code, value = TRUE)
+            req_lines <- grep(req_pat, code, value = TRUE)
+            # Extract the libraries
+            libs <- do.call("c", extract_all(lib_lines, lib_pat))
+            reqs <- do.call("c", extract_all(req_lines, req_pat))
+            # Get namespaced calls
+            ns_calls <- grep(":{2,3}", code, value = TRUE)
+            ns <- lapply(
+                ns_calls,
+                extract_all,
+                pattern = "([[:alnum:]]+?):{2,3}"
+            )
+            ns <- unique(sub(":{2,3}", "", do.call("c", ns)))
+            # return all libraries
+            pkgs <- unique(c(libs, reqs, ns))
+            pkgs
+        })
+    )
 )
 
 # find installed/uninstalled packages
-installed <- vapply(libraries, function(x) {
-    out <- tryCatch(
-        {
-            find.package(x)
-            TRUE
-        },
-        warning = function(cond) {
-            stop("A warning appeared when installing packages.\nCheck install_packages.R\n")
-        },
-        error = function(cond) {
-            return(FALSE)
-        }
-    )
-    return(out)
-}, logical(1L), USE.NAMES = TRUE)
-
+installed <- is_installed(libraries)
 # Get uninstalled packages. Always add confMeta such that the newest version is
 # installed.
-install_libs <- unique(c(libraries[!installed], "confMeta"))
+install_libs <- unique(names(installed)[!installed], "confMeta")
 
 # install missing packages
 if (length(install_libs) == 0) {
@@ -81,11 +96,13 @@ if (length(install_libs) == 0) {
     install <- lapply(install_libs, function(x) {
         out <- tryCatch(
             {
+                sink(nullfile())
                 install.packages(
                     x,
                     repos = "https://cloud.r-project.org/",
                     quiet = TRUE
                 )
+                sink()
                 list(status = 0L, message = NA_character_)
             },
             warning = function(w) {
