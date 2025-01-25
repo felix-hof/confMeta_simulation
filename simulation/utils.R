@@ -24,6 +24,7 @@ rep2 <- function(x, ...) {
 ## This function is used in:
 ## - sim_effects
 error_function <- function(cond, pars, error_obj = NULL, fun_name, i) {
+    error_name <- paste0("error_", i)
     text <- capture.output(cond)
     out_msg <- paste0(
         "Error in ", fun_name, " iteration: ", i, "\n\n",
@@ -42,9 +43,11 @@ error_function <- function(cond, pars, error_obj = NULL, fun_name, i) {
         "---------------------------------------------------------------------",
         "-----------\n\n\n"
     )
-    cat(out_msg, file = "error.txt", append = TRUE)
+    cat(out_msg, file = paste0(error_name, ".txt"), append = TRUE)
     saveRDS(pars, file = "pars.rds")
-    if (!is.null(error_obj)) saveRDS(error_obj, file = "error.rds")
+    if (!is.null(error_obj)) {
+        saveRDS(error_obj, file = paste0(error_name, ".rds"))
+    }
     return(NA)
 }
 

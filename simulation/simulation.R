@@ -323,17 +323,20 @@ grid <- expand.grid(
 #     with(
 #         grid,
 #         {
-#             effect == 0.2 &
+#             sampleSize == 50 &
+#                 effect == 0.2 &
 #                 I2 == 0.9 &
-#                 k == 3L &
-#                 dist == "snr" &
+#                 k == 50 &
+#                 heterogeneity == "additive" &
+#                 dist == "snl" &
 #                 bias == "none" &
-#                 large == 1L
+#                 large == 0
 #         }
 #     )
 # )
 # seed <- 42
 # save_data <- TRUE
+# i <- 1
 
 # Set some parameters based on available computing machines
 machine <- Sys.info()["nodename"]
