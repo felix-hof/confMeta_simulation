@@ -393,27 +393,6 @@ cat(
 )
 attr(out, which = "runtime") <- run_time
 
-# Check some of the results as cause of the error:
-# "Error in attr(o, "seed") <- seed : attempt to set attribute on NULL"
-# This error happens when in the call to rbind when we try to create the data
-# frame from a list. It turned out that the reason for this was that in the
-# cases when one or more of these CIs did not exist, the confMeta function
-# 'get_ci' which did return a misspecified list.
-
-# files <- list.files(path = "RData/CIs", full.names = TRUE)
-# has_na <- logical(length(files))
-# na_cis <- list()
-# for (i in seq_along(files)) {
-#     dat <- readRDS(file = files[i])
-#     cis <- lapply(dat$cis, "[[", i = "CI")
-#     idx <- sapply(cis, \(x) anyNA(x$lower))
-#     if (any(idx)) {
-#         na_cis <- append(na_cis, cis[idx])
-#         has_na[i] <- TRUE
-#     }
-# }
-
-
 ## save results
 sessionInfo <- sessionInfo()
 print(sessionInfo)
