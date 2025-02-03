@@ -1,4 +1,4 @@
-# Combined confidence curves for meta-analysis 
+# A comparison of combined p-value functions for meta-analysis
 
 This repository contains:
 
