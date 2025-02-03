@@ -29,7 +29,7 @@ relbias <- function(estimate, true, na.rm = FALSE) {
 }
 relbias_mcse <- function(estimate, true, na.rm = FALSE) {
     n <- sum(!is.na(estimate))
-    sd(estimate, na.rm = na.rm)/n/abs(truemean)
+    sd(estimate, na.rm = na.rm)/n/abs(true)
 }
 
 ## median bias
@@ -114,14 +114,18 @@ rmse_mcse <-  function(estimate, true, na.rm = FALSE) {
 
 ## correlation between CI skewness and data skewness
 corskew <- function(CIskew, dataskew, na.rm = FALSE) {
-    if (na.rm == TRUE) {
-        use <- "pairwise.complete.obs"
+    if (all(is.na(CIskew)) || is.null(CIskew)) {
+        return(NA)
     } else {
-        use <- "everything"
+        if (na.rm == TRUE) {
+            use <- "pairwise.complete.obs"
+        } else {
+            use <- "everything"
+        }
+        suppressWarnings({
+            cor(x = CIskew, y = dataskew, use = use)
+        })
     }
-    suppressWarnings({
-        cor(x = CIskew, y = dataskew, use = use)
-    })
 }
 corskew_mcse <- function(CIskew, dataskew, na.rm = FALSE) {
     cor <- corskew(CIskew, dataskew, na.rm)
@@ -162,6 +166,8 @@ detectCores()
 path <- "simulation/RData/CIs/"
 files <- list.files(path = path)
 pb <- txtProgressBar(min = 1, max = length(files), style = 3)
+## summarydat <- vector("list", length = length(files))
+## for (i in seq(1, length(files))) {
 summarydat <- mclapply(mc.cores = pmax(detectCores() - 1, 1),
                        X = seq_along(files), FUN = function(i) {
     setTxtProgressBar(pb = pb, value = i)
@@ -193,11 +199,15 @@ summarydat <- mclapply(mc.cores = pmax(detectCores() - 1, 1),
     }
     condition$effect_median <- truemedian
 
-    ## extract estimates and CIs per method/repetion
+    ## extract estimates, CIs, AUCC, per method/repetion
     estimates <- do.call("rbind", lapply(X = seq_along(condList$cis), FUN = function(j) {
-        cbind("repetition" = j, condList$cis[[j]]$CI)
+        ## cbind("repetition" = j, condList$cis[[j]]$CI)
+        merge(cbind("repetition" = j, condList$cis[[j]]$CI),
+              data.frame(condList$cis[[j]]$aucc, aucc_ratio = condList$cis[[j]]$aucc_ratio$aucc_ratio),
+              all = TRUE)
     }))
     estimates <- as.data.table(estimates)
+    # 173 - 177
 
     ## add RE-MA confidence interval as reference for computing relative width
     ## lowerrema, upperrema
@@ -307,11 +317,21 @@ summarydat <- mclapply(mc.cores = pmax(detectCores() - 1, 1),
                       ciskew_mean_mcse = bias_mcse(CIskew, na.rm = TRUE),
                       ciskew_median = median(CIskew, na.rm = TRUE),
                       ciskew_max = max(CIskew, na.rm = TRUE),
-                      ciskew_min = min(CIskew, na.rm = TRUE)
+                      ciskew_min = min(CIskew, na.rm = TRUE),
+                      aucc_mean = mean(aucc, na.rm = TRUE),
+                      aucc_mean_mcse = bias_mcse(aucc, na.rm = TRUE),
+                      aucc_median = median(aucc, na.rm = TRUE),
+                      aucc_ratio_mean = mean(aucc_ratio, na.rm = TRUE),
+                      aucc_ratio_mean_mcse = bias_mcse(aucc_ratio, na.rm = TRUE),
+                      aucc_ratio_median = median(aucc_ratio, na.rm = TRUE),
+                      aucc_ratio_10 = quantile(aucc_ratio, probs = 0.1, na.rm = TRUE),
+                      aucc_ratio_90 = quantile(aucc_ratio, probs = 0.9, na.rm = TRUE)
                   ),
                   method]
     return(cbind(condition, summaries))
-})
+    })
+##     summarydat[[i]] <- cbind(condition, summaries)
+## }
 
 summaryDF <- do.call("rbind", summarydat)
 write.csv(summaryDF, file = "simulation/RData/simulation-summaries.csv", row.names = FALSE)
