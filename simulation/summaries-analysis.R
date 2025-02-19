@@ -103,10 +103,10 @@ mse_mcse <- function(estimate, true, na.rm = FALSE) {
 }
 
 ## root mean square error
-rmse <-  function(estimate, true, na.rm = FALSE) {
+rmse <- function(estimate, true, na.rm = FALSE) {
     mse(estimate, true, na.rm = na.rm)
 }
-rmse_mcse <-  function(estimate, true, na.rm = FALSE) {
+rmse_mcse <- function(estimate, true, na.rm = FALSE) {
     mse_mcse(estimate, true, na.rm = na.rm)/
         (4*mse(estimate, true, na.rm = na.rm))
 
@@ -323,6 +323,8 @@ summarydat <- mclapply(mc.cores = pmax(detectCores() - 1, 1),
                       aucc_median = median(aucc, na.rm = TRUE),
                       aucc_ratio_mean = mean(aucc_ratio, na.rm = TRUE),
                       aucc_ratio_mean_mcse = bias_mcse(aucc_ratio, na.rm = TRUE),
+                      kappa_aucc_ratio = kappaskew(aucc_ratio, dataskew, na.rm = TRUE),
+                      kappa_aucc_ratio_mcse = kappaskew_mcse(aucc_ratio, dataskew, na.rm = TRUE),
                       aucc_ratio_median = median(aucc_ratio, na.rm = TRUE),
                       aucc_ratio_10 = quantile(aucc_ratio, probs = 0.1, na.rm = TRUE),
                       aucc_ratio_90 = quantile(aucc_ratio, probs = 0.9, na.rm = TRUE)
